@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QuizBattle – Twitch Edition</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;900&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.5"></script>
 <style>
 :root {
   --bg:      #08080f;
@@ -433,7 +433,7 @@ textarea { resize: vertical; min-height: 80px; }
   flex-direction:column; align-items:center; justify-content:center; gap:12px;
   text-align:center; padding:24px;
 }
-</style>
+/* ── HOST JOKER OVERVIEW ── */
 .joker-overview { margin-top: 4px; }
 .joker-overview-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -592,6 +592,10 @@ textarea { resize: vertical; min-height: 80px; }
         <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="saveSettings()">💾 Speichern</button>
       </div>
     </div>
+    <!-- Lobby -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>👥 Lobby</h2>
         <div id="player-badge" class="badge">0 Spieler</div>
       </div>
       <div id="lobby-list" class="player-grid"></div>
@@ -937,7 +941,18 @@ let LOBBY_SETTINGS = {
   jokers: { audience: true, host: true, fifty: true, highrisk: true }
 };
 
-// ── INIT ─────────────────────────────────
+// Settings sicher aus Session lesen (Supabase gibt JSONB manchmal als String zurück)
+function parseSettings(raw) {
+  if (!raw) return null;
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : null;
+  } catch { return null; }
+}
+// Settings sicher als Plain-Object in DB schreiben (kein Proxy/Class-Instanz)
+function settingsPayload() {
+  return JSON.parse(JSON.stringify(LOBBY_SETTINGS));
+}
 async function init() {
   if (SUPABASE_URL.startsWith('DEINE') || SUPABASE_ANON.startsWith('DEIN')) {
     document.getElementById('config-banner').style.display = 'block';
@@ -1038,7 +1053,7 @@ function subscribeRealtime() {
 
 async function onSessionChange(payload) {
   const s = payload.new; if (!s) return;
-  if (s.settings) Object.assign(LOBBY_SETTINGS, s.settings);
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
   if (s.viewer_voting !== undefined) { VIEWER_VOTING_ENABLED = s.viewer_voting; updateViewerToggleUI(); }
   if (!IS_HOST && !IS_VIEWER && s.timer_started_at) syncPlayerTimer(s);
   if (IS_HOST)        await hostHandlePhase(s);
@@ -1125,8 +1140,8 @@ async function hostLogin() {
   IS_HOST = true; localStorage.setItem('qb_role', 'host');
   const s = await getSession();
   VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
-  if (s?.settings) { Object.assign(LOBBY_SETTINGS, s.settings); applySettingsToUI(); }
-  else { applySettingsToUI(); }
+  { const _ps = parseSettings(s?.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+  applySettingsToUI();
   const players = await getPlayers();
   updateLobbyUI(players); updateScoreboardUI('host-scores', players);
   updateHostLiveRanking(players);
@@ -1178,7 +1193,7 @@ async function saveSettings() {
     fifty:    document.getElementById('cfg-j-fifty').checked,
     highrisk: document.getElementById('cfg-j-highrisk').checked,
   };
-  await db.from('game_sessions').update({ settings: LOBBY_SETTINGS }).eq('id', SESSION_ID);
+  await db.from('game_sessions').update({ settings: settingsPayload() }).eq('id', SESSION_ID);
   updateSettingsSummary();
   document.getElementById('settings-panel').style.display = 'none';
   showToast('✅ Einstellungen gespeichert');
@@ -1231,7 +1246,7 @@ async function startGame() {
   await db.from('joker_usage').delete().eq('session_id', SESSION_ID);
   await db.from('game_sessions').update({
     phase: 'question', question_index: 0, questions: selected,
-    settings: LOBBY_SETTINGS, timer_started_at: null
+    settings: settingsPayload(), timer_started_at: null
   }).eq('id', SESSION_ID);
 }
 
@@ -1341,7 +1356,7 @@ async function hostShowViewerDist() {
 async function hostRevealAnswer() {
   const s = await getSession(), q = s.questions[s.question_index];
   const answers = await getAnswers(s.question_index);
-  const settings = s.settings || LOBBY_SETTINGS;
+  const settings = parseSettings(s.settings) || LOBBY_SETTINGS;
   const isLastQ  = s.question_index >= s.questions.length - 1;
 
   // Award points with all modifiers
@@ -1735,7 +1750,7 @@ async function confirmAnswer() {
 
 async function playerShowResult(s) {
   const q = s.questions[s.question_index];
-  const settings = s.settings || LOBBY_SETTINGS;
+  const settings = parseSettings(s.settings) || LOBBY_SETTINGS;
   const isLastQ  = s.question_index >= s.questions.length - 1;
   const { data: ans } = await db.from('answers').select('*').eq('session_id', SESSION_ID).eq('player_name', MY_NAME).eq('question_index', s.question_index).single();
   // Check High-Risk joker used
@@ -2097,7 +2112,7 @@ async function useJoker(type) {
   const s = await getSession();
   if (!s || s.phase !== 'question') { showToast('Joker nur während einer Frage!'); return; }
   // Settings aus Session nehmen falls vorhanden
-  if (s.settings) Object.assign(LOBBY_SETTINGS, s.settings);
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
 
   // 1 Joker pro Frage
   const { data: thisRound } = await db.from('joker_usage')
@@ -2151,7 +2166,6 @@ async function useJoker(type) {
   });
   usedJokers.add(type);
   renderJokerBar();
-}
 }
 
 // ── TIMER ─────────────────────────────────
