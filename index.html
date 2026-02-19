@@ -539,8 +539,8 @@ textarea { resize: vertical; min-height: 80px; }
             <input class="setting-num" type="number" id="cfg-questions" min="1" max="50" value="20">
           </div>
           <div class="setting-item">
-            <div class="lbl">⏱️ Timer (10–60s)</div>
-            <input class="setting-num" type="number" id="cfg-timer" min="10" max="60" value="30">
+            <div class="lbl">⏱️ Timer in Sekunden</div>
+            <input class="setting-num" type="number" id="cfg-timer" min="10" max="300" value="30">
           </div>
           <div class="setting-item">
             <div class="lbl">👥 Max. Spieler (0=∞)</div>
@@ -559,11 +559,11 @@ textarea { resize: vertical; min-height: 80px; }
             <div class="mode-pill" id="pill-speed" onclick="selectScoring('speed')">⚡ Speed-Bonus (bis 100 Pt)</div>
           </div>
           <div id="speed-config" style="display:none;margin-top:10px;background:rgba(255,255,255,.03);border-radius:10px;padding:12px">
-            <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Speed-Bonus: Punkte fallen während der Antwortzeit. Schnellere Antwort = mehr Punkte.</div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:.85rem">
-              <span>Max. Antwortzeit:</span>
-              <input class="setting-num" type="number" id="cfg-speedtime" min="5" max="60" value="20" style="width:60px">
-              <span style="color:var(--muted)">s (= 0 Punkte wenn so spät)</span>
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">Speed-Bonus: Punkte fallen während der Antwortzeit von 100 auf 0. Schnellere Antwort = mehr Punkte.</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:.85rem;flex-wrap:wrap">
+              <span style="white-space:nowrap">Max. Antwortzeit (s):</span>
+              <input class="setting-num" type="number" id="cfg-speedtime" min="5" max="300" value="20" style="width:80px;flex-shrink:0">
+              <span style="color:var(--muted);font-size:.8rem">= 0 Punkte wenn zu spät</span>
             </div>
           </div>
         </div>
@@ -572,10 +572,10 @@ textarea { resize: vertical; min-height: 80px; }
           <div class="lbl" style="margin-bottom:6px">💀 Hardcore Mode</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <div class="mode-pill" id="pill-hardcore" onclick="toggleHardcore()">💀 Aus</div>
-            <div id="hardcore-config" style="display:none;display:flex;align-items:center;gap:8px;font-size:.85rem">
-              <span>Anzahl Leben:</span>
-              <input class="setting-num" type="number" id="cfg-lives" min="1" max="5" value="1" style="width:55px">
-              <span style="color:var(--muted)">Wer alle verliert, scheidet aus</span>
+            <div id="hardcore-config" style="display:none;align-items:center;gap:8px;font-size:.85rem;flex-wrap:wrap">
+              <span style="white-space:nowrap">Anzahl Leben:</span>
+              <input class="setting-num" type="number" id="cfg-lives" min="1" max="5" value="1" style="width:60px;flex-shrink:0">
+              <span style="color:var(--muted);font-size:.8rem">Wer alle Leben verliert, scheidet aus</span>
             </div>
           </div>
         </div>
@@ -1181,12 +1181,12 @@ function toggleHardcore() {
 }
 
 async function saveSettings() {
-  LOBBY_SETTINGS.questions  = Math.max(1,  Math.min(50,  parseInt(document.getElementById('cfg-questions').value)  || 20));
-  LOBBY_SETTINGS.timer      = Math.max(10, Math.min(60,  parseInt(document.getElementById('cfg-timer').value)      || 30));
-  LOBBY_SETTINGS.maxPlayers = Math.max(0,  Math.min(100, parseInt(document.getElementById('cfg-maxplayers').value) || 0));
+  LOBBY_SETTINGS.questions  = Math.max(1,   Math.min(50,  parseInt(document.getElementById('cfg-questions').value)  || 20));
+  LOBBY_SETTINGS.timer      = Math.max(10,  Math.min(300, parseInt(document.getElementById('cfg-timer').value)      || 30));
+  LOBBY_SETTINGS.maxPlayers = Math.max(0,   Math.min(100, parseInt(document.getElementById('cfg-maxplayers').value) || 0));
   LOBBY_SETTINGS.maxViewers = Math.max(0,               parseInt(document.getElementById('cfg-maxviewers').value) || 0);
-  LOBBY_SETTINGS.speedTime  = Math.max(5,  Math.min(60,  parseInt(document.getElementById('cfg-speedtime').value)  || 20));
-  LOBBY_SETTINGS.lives      = Math.max(1,  Math.min(5,   parseInt(document.getElementById('cfg-lives').value)      || 1));
+  LOBBY_SETTINGS.speedTime  = Math.max(5,   Math.min(300, parseInt(document.getElementById('cfg-speedtime').value)  || 20));
+  LOBBY_SETTINGS.lives      = Math.max(1,   Math.min(5,   parseInt(document.getElementById('cfg-lives').value)      || 1));
   LOBBY_SETTINGS.jokers = {
     audience: document.getElementById('cfg-j-audience').checked,
     host:     document.getElementById('cfg-j-host').checked,
