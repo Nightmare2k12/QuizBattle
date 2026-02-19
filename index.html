@@ -395,7 +395,45 @@ textarea { resize: vertical; min-height: 80px; }
 .help-alert-item .help-icon { font-size: 1.6rem; flex-shrink: 0; }
 .help-alert-item .help-text { flex: 1; }
 .help-alert-item .help-name { color: var(--gold); }
-/* ── HOST JOKER OVERVIEW ── */
+/* ── LOBBY SETTINGS ── */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.setting-item  { display: flex; flex-direction: column; gap: 5px; }
+.setting-item .lbl { font-size: .72rem; }
+.setting-row   { display: flex; align-items: center; gap: 10px; }
+.setting-num   {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px; padding: 8px 12px; color: var(--text);
+  font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 1rem;
+  width: 70px; text-align: center; outline: none;
+}
+.setting-num:focus { border-color: var(--accent); }
+.setting-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .88rem; }
+.setting-check input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+.mode-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.05); border: 2px solid rgba(255,255,255,.08);
+  border-radius: 10px; padding: 8px 14px; cursor: pointer;
+  font-size: .82rem; font-weight: 700; transition: all .2s;
+}
+.mode-pill.active { border-color: var(--accent); background: rgba(233,69,96,.12); color: var(--accent); }
+.mode-pill.active-green { border-color: var(--green); background: rgba(46,204,113,.1); color: var(--green); }
+.joker-toggle-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+/* High-Risk Joker */
+.joker-btn.j-highrisk { }
+.joker-btn.j-highrisk:hover:not(:disabled) { border-color: #ff6b35; background: rgba(255,107,53,.12); }
+.joker-pip.j-highrisk { }
+.joker-pip.available.j-highrisk { background: rgba(255,107,53,.2); border-color: rgba(255,107,53,.5); }
+/* Hardcore badge on player view */
+#pq-lives { display:none; justify-content:center; gap:6px; margin-bottom:10px; }
+.life-heart { font-size:1.3rem; line-height:1; }
+.life-heart.lost { filter: grayscale(1); opacity: .25; }
+/* Knocked-out overlay */
+#pq-knocked { display:none; position:absolute; inset:0; z-index:20;
+  background: rgba(8,8,15,.92); border-radius: var(--r);
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  text-align:center; padding:24px;
+}
+</style>
 .joker-overview { margin-top: 4px; }
 .joker-overview-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -464,8 +502,10 @@ textarea { resize: vertical; min-height: 80px; }
   <div class="card">
     <h2 style="margin-bottom:20px">🎙️ Host-Bereich</h2>
     <div class="lbl">Host-Passwort</div>
-    <input type="text" id="host-pw" placeholder="Passwort eingeben…" />
-    <div style="margin-top:6px;font-size:.78rem;color:var(--muted)">Standard: <code>host123</code></div>
+    <div style="position:relative">
+      <input type="password" id="host-pw" placeholder="Passwort eingeben…" style="padding-right:48px" onkeydown="if(event.key==='Enter')hostLogin()" />
+      <button onclick="togglePwVis()" id="pw-eye-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted);padding:4px" title="Passwort anzeigen">👁️</button>
+    </div>
     <div class="gap" style="margin-top:16px">
       <button class="btn btn-primary btn-full" onclick="hostLogin()">Einloggen</button>
       <button class="btn btn-secondary btn-full" onclick="showView('view-landing')">Zurück</button>
@@ -487,8 +527,71 @@ textarea { resize: vertical; min-height: 80px; }
       </div>
     </div>
     <div class="card" style="margin-bottom:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h2>👥 Lobby</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <h2>⚙️ Runden-Einstellungen</h2>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:.78rem" onclick="toggleSettings()">Bearbeiten</button>
+      </div>
+      <div id="settings-summary" style="font-size:.82rem;color:var(--muted)">Lädt…</div>
+      <div id="settings-panel" style="display:none;margin-top:16px">
+        <div class="settings-grid">
+          <div class="setting-item">
+            <div class="lbl">🔢 Fragen pro Runde</div>
+            <input class="setting-num" type="number" id="cfg-questions" min="1" max="50" value="20">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">⏱️ Timer (10–60s)</div>
+            <input class="setting-num" type="number" id="cfg-timer" min="10" max="60" value="30">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">👥 Max. Spieler (0=∞)</div>
+            <input class="setting-num" type="number" id="cfg-maxplayers" min="0" max="100" value="0">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">👁️ Max. Zuschauer (0=∞)</div>
+            <input class="setting-num" type="number" id="cfg-maxviewers" min="0" max="9999" value="0">
+          </div>
+        </div>
+        <!-- Punktesystem -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">🏆 Punktesystem</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="mode-pill active" id="pill-classic" onclick="selectScoring('classic')">🎯 Klassisch (1 Pt)</div>
+            <div class="mode-pill" id="pill-speed" onclick="selectScoring('speed')">⚡ Speed-Bonus (bis 100 Pt)</div>
+          </div>
+          <div id="speed-config" style="display:none;margin-top:10px;background:rgba(255,255,255,.03);border-radius:10px;padding:12px">
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Speed-Bonus: Punkte fallen während der Antwortzeit. Schnellere Antwort = mehr Punkte.</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:.85rem">
+              <span>Max. Antwortzeit:</span>
+              <input class="setting-num" type="number" id="cfg-speedtime" min="5" max="60" value="20" style="width:60px">
+              <span style="color:var(--muted)">s (= 0 Punkte wenn so spät)</span>
+            </div>
+          </div>
+        </div>
+        <!-- Hardcore Mode -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">💀 Hardcore Mode</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div class="mode-pill" id="pill-hardcore" onclick="toggleHardcore()">💀 Aus</div>
+            <div id="hardcore-config" style="display:none;display:flex;align-items:center;gap:8px;font-size:.85rem">
+              <span>Anzahl Leben:</span>
+              <input class="setting-num" type="number" id="cfg-lives" min="1" max="5" value="1" style="width:55px">
+              <span style="color:var(--muted)">Wer alle verliert, scheidet aus</span>
+            </div>
+          </div>
+        </div>
+        <!-- Verfügbare Joker -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">🃏 Verfügbare Joker</div>
+          <div class="joker-toggle-row" id="joker-toggle-row">
+            <label class="setting-check"><input type="checkbox" id="cfg-j-audience" checked> 👥 Publikum</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-host" checked> 🆘 Host-Hilfe</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-fifty" checked> 50:50</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-highrisk" checked> 🎲 High Risk</label>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="saveSettings()">💾 Speichern</button>
+      </div>
+    </div>
         <div id="player-badge" class="badge">0 Spieler</div>
       </div>
       <div id="lobby-list" class="player-grid"></div>
@@ -663,6 +766,14 @@ textarea { resize: vertical; min-height: 80px; }
       </div>
       <div style="font-size:.8rem;color:var(--muted)">Antworten erscheinen gleich…</div>
     </div>
+    <!-- Lives (Hardcore) -->
+    <div id="pq-lives"></div>
+    <!-- Knocked-out overlay -->
+    <div id="pq-knocked">
+      <div style="font-size:3rem">💀</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:var(--accent)">Ausgeschieden!</div>
+      <div style="color:var(--muted);font-size:.9rem">Du hast alle Leben verloren. Warte auf das Ergebnis…</div>
+    </div>
     <div class="progress-bar"><div class="progress-fill" id="pq-progress"></div></div>
     <!-- Timer Bar (erscheint wenn Host Timer startet) -->
     <div id="pq-timer-bar" style="display:none;margin-bottom:16px;background:rgba(255,255,255,.04);border:1px solid rgba(245,200,66,.2);border-radius:12px;padding:10px 14px;align-items:center;gap:12px">
@@ -692,6 +803,9 @@ textarea { resize: vertical; min-height: 80px; }
       </button>
       <button class="joker-btn j-fifty" id="joker-fifty" onclick="useJoker('fifty')" title="50:50 Joker">
         <span class="j-icon">50:50</span><span>Ausblenden</span>
+      </button>
+      <button class="joker-btn j-highrisk" id="joker-highrisk" onclick="useJoker('highrisk')" title="High Risk High Reward">
+        <span class="j-icon">🎲</span><span>High Risk</span>
       </button>
     </div>
     <!-- Publikumsjoker Ergebnis -->
@@ -810,6 +924,19 @@ let IS_HOST = false, IS_VIEWER = false;
 let VIEWER_TOKEN = null, VIEWER_VOTING_ENABLED = false;
 let currentQIndex = -1, realtimeSub = null;
 
+// ── LOBBY SETTINGS (live aus DB geladen) ──
+let LOBBY_SETTINGS = {
+  questions: 20,
+  timer: 30,
+  maxPlayers: 0,
+  maxViewers: 0,
+  scoring: 'classic',   // 'classic' | 'speed'
+  speedTime: 20,
+  hardcore: false,
+  lives: 1,
+  jokers: { audience: true, host: true, fifty: true, highrisk: true }
+};
+
 // ── INIT ─────────────────────────────────
 async function init() {
   if (SUPABASE_URL.startsWith('DEINE') || SUPABASE_ANON.startsWith('DEIN')) {
@@ -911,11 +1038,9 @@ function subscribeRealtime() {
 
 async function onSessionChange(payload) {
   const s = payload.new; if (!s) return;
+  if (s.settings) Object.assign(LOBBY_SETTINGS, s.settings);
   if (s.viewer_voting !== undefined) { VIEWER_VOTING_ENABLED = s.viewer_voting; updateViewerToggleUI(); }
-  // Timer-Sync: Wenn Host Timer startet, alle Spieler sehen ihn
-  if (!IS_HOST && !IS_VIEWER && s.timer_started_at) {
-    syncPlayerTimer(s);
-  }
+  if (!IS_HOST && !IS_VIEWER && s.timer_started_at) syncPlayerTimer(s);
   if (IS_HOST)        await hostHandlePhase(s);
   else if (IS_VIEWER) await viewerHandlePhase(s);
   else                await playerHandlePhase(s);
@@ -1000,6 +1125,8 @@ async function hostLogin() {
   IS_HOST = true; localStorage.setItem('qb_role', 'host');
   const s = await getSession();
   VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
+  if (s?.settings) { Object.assign(LOBBY_SETTINGS, s.settings); applySettingsToUI(); }
+  else { applySettingsToUI(); }
   const players = await getPlayers();
   updateLobbyUI(players); updateScoreboardUI('host-scores', players);
   updateHostLiveRanking(players);
@@ -1010,21 +1137,102 @@ async function hostLogin() {
   showLogoutBtn();
 }
 
+function togglePwVis() {
+  const inp = document.getElementById('host-pw');
+  const btn = document.getElementById('pw-eye-btn');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+}
+
+function toggleSettings() {
+  const panel = document.getElementById('settings-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectScoring(mode) {
+  LOBBY_SETTINGS.scoring = mode;
+  document.getElementById('pill-classic').className = 'mode-pill' + (mode==='classic'?' active':'');
+  document.getElementById('pill-speed').className   = 'mode-pill' + (mode==='speed'?' active':'');
+  document.getElementById('speed-config').style.display = mode === 'speed' ? 'block' : 'none';
+}
+
+function toggleHardcore() {
+  LOBBY_SETTINGS.hardcore = !LOBBY_SETTINGS.hardcore;
+  const pill = document.getElementById('pill-hardcore');
+  const cfg  = document.getElementById('hardcore-config');
+  pill.className = 'mode-pill' + (LOBBY_SETTINGS.hardcore ? ' active' : '');
+  pill.textContent = LOBBY_SETTINGS.hardcore ? '💀 An' : '💀 Aus';
+  cfg.style.display = LOBBY_SETTINGS.hardcore ? 'flex' : 'none';
+}
+
+async function saveSettings() {
+  LOBBY_SETTINGS.questions  = Math.max(1,  Math.min(50,  parseInt(document.getElementById('cfg-questions').value)  || 20));
+  LOBBY_SETTINGS.timer      = Math.max(10, Math.min(60,  parseInt(document.getElementById('cfg-timer').value)      || 30));
+  LOBBY_SETTINGS.maxPlayers = Math.max(0,  Math.min(100, parseInt(document.getElementById('cfg-maxplayers').value) || 0));
+  LOBBY_SETTINGS.maxViewers = Math.max(0,               parseInt(document.getElementById('cfg-maxviewers').value) || 0);
+  LOBBY_SETTINGS.speedTime  = Math.max(5,  Math.min(60,  parseInt(document.getElementById('cfg-speedtime').value)  || 20));
+  LOBBY_SETTINGS.lives      = Math.max(1,  Math.min(5,   parseInt(document.getElementById('cfg-lives').value)      || 1));
+  LOBBY_SETTINGS.jokers = {
+    audience: document.getElementById('cfg-j-audience').checked,
+    host:     document.getElementById('cfg-j-host').checked,
+    fifty:    document.getElementById('cfg-j-fifty').checked,
+    highrisk: document.getElementById('cfg-j-highrisk').checked,
+  };
+  await db.from('game_sessions').update({ settings: LOBBY_SETTINGS }).eq('id', SESSION_ID);
+  updateSettingsSummary();
+  document.getElementById('settings-panel').style.display = 'none';
+  showToast('✅ Einstellungen gespeichert');
+}
+
+function updateSettingsSummary() {
+  const s = LOBBY_SETTINGS;
+  const scoringLabel = s.scoring === 'speed' ? `⚡ Speed-Bonus (${s.speedTime}s)` : '🎯 Klassisch';
+  const hardcoreLabel = s.hardcore ? ` · 💀 Hardcore (${s.lives} Leben)` : '';
+  const maxPLabel = s.maxPlayers > 0 ? ` · max. ${s.maxPlayers} Spieler` : '';
+  document.getElementById('settings-summary').textContent =
+    `${s.questions} Fragen · ⏱️ ${s.timer}s · ${scoringLabel}${hardcoreLabel}${maxPLabel}`;
+}
+
+function applySettingsToUI() {
+  document.getElementById('cfg-questions').value  = LOBBY_SETTINGS.questions;
+  document.getElementById('cfg-timer').value      = LOBBY_SETTINGS.timer;
+  document.getElementById('cfg-maxplayers').value = LOBBY_SETTINGS.maxPlayers;
+  document.getElementById('cfg-maxviewers').value = LOBBY_SETTINGS.maxViewers;
+  document.getElementById('cfg-speedtime').value  = LOBBY_SETTINGS.speedTime;
+  document.getElementById('cfg-lives').value      = LOBBY_SETTINGS.lives;
+  selectScoring(LOBBY_SETTINGS.scoring);
+  // Hardcore
+  if (LOBBY_SETTINGS.hardcore !== (document.getElementById('pill-hardcore').textContent === '💀 An')) toggleHardcore();
+  // Joker checkboxes
+  ['audience','host','fifty','highrisk'].forEach(j => {
+    const el = document.getElementById(`cfg-j-${j}`);
+    if (el) el.checked = LOBBY_SETTINGS.jokers?.[j] !== false;
+  });
+  updateSettingsSummary();
+}
+
 async function startGame() {
   const allQ = await getAllBankQuestions();
   if (!allQ.length) { showToast('❌ Keine Fragen!'); return; }
-  const selected = weightedQuestionSelect(allQ, Math.min(QUESTIONS_PER_GAME, allQ.length))
+  const numQ = LOBBY_SETTINGS.questions || QUESTIONS_PER_GAME;
+  const selected = weightedQuestionSelect(allQ, Math.min(numQ, allQ.length))
     .map(q => ({ q: q.question, answers: q.answers, correct: q.correct, _id: q.id }));
-  // last_used_at für gewählte Fragen aktualisieren
   const now = new Date().toISOString();
   for (const q of selected) {
     await db.from('questions_bank').update({ last_used_at: now }).eq('id', q._id);
   }
   const players = await getPlayers();
-  for (const p of players) await db.from('players').update({ score: 0 }).eq('id', p.id);
+  for (const p of players) {
+    const livesVal = LOBBY_SETTINGS.hardcore ? LOBBY_SETTINGS.lives : null;
+    await db.from('players').update({ score: 0, lives: livesVal, knocked_out: false }).eq('id', p.id);
+  }
   await db.from('answers').delete().eq('session_id', SESSION_ID);
   await db.from('viewer_answers').delete().eq('session_id', SESSION_ID);
-  await db.from('game_sessions').update({ phase: 'question', question_index: 0, questions: selected }).eq('id', SESSION_ID);
+  await db.from('joker_usage').delete().eq('session_id', SESSION_ID);
+  await db.from('game_sessions').update({
+    phase: 'question', question_index: 0, questions: selected,
+    settings: LOBBY_SETTINGS, timer_started_at: null
+  }).eq('id', SESSION_ID);
 }
 
 async function hostHandlePhase(s) {
@@ -1133,23 +1341,67 @@ async function hostShowViewerDist() {
 async function hostRevealAnswer() {
   const s = await getSession(), q = s.questions[s.question_index];
   const answers = await getAnswers(s.question_index);
+  const settings = s.settings || LOBBY_SETTINGS;
+  const isLastQ  = s.question_index >= s.questions.length - 1;
 
-  // Award points
+  // Award points with all modifiers
   for (const a of answers) {
     const ok = a.answer_index === q.correct;
     await db.from('answers').update({ is_correct: ok }).eq('id', a.id);
-    if (ok) {
-      const { data: p } = await db.from('players').select('score').eq('session_id', SESSION_ID).eq('name', a.player_name).single();
-      if (p) await db.from('players').update({ score: (p.score||0)+POINTS_CORRECT }).eq('session_id', SESSION_ID).eq('name', a.player_name);
+
+    // Check if this player used High-Risk joker this question
+    const { data: hrJoker } = await db.from('joker_usage').select('id')
+      .eq('session_id', SESSION_ID).eq('player_name', a.player_name)
+      .eq('joker_type', 'highrisk').eq('question_index', s.question_index).single().catch(()=>({data:null}));
+    const isHighRisk = !!hrJoker;
+
+    // Calculate base points
+    let pts = 0;
+    if (settings.scoring === 'speed' && ok && a.answered_at && s.timer_started_at) {
+      const elapsed  = (new Date(a.answered_at) - new Date(s.timer_started_at)) / 1000;
+      const maxTime  = settings.speedTime || 20;
+      const fraction = Math.max(0, 1 - elapsed / maxTime);
+      pts = Math.round(fraction * 100);
+      if (pts < 1 && ok) pts = 1; // mindestens 1 Punkt wenn richtig
+    } else {
+      pts = ok ? POINTS_CORRECT : 0;
+    }
+
+    // High-Risk modifier
+    if (isHighRisk) {
+      const hrPts = isLastQ ? 5 : 3;
+      pts = ok ? hrPts : -hrPts;
+    }
+
+    if (pts !== 0) {
+      const { data: p } = await db.from('players').select('score,lives,knocked_out')
+        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
+      if (p) {
+        const newScore = Math.max(0, (p.score||0) + pts); // Score nicht unter 0
+        let updates = { score: newScore };
+
+        // Hardcore: Leben abziehen wenn falsch
+        if (settings.hardcore && !ok && p.lives !== null) {
+          const newLives = Math.max(0, (p.lives||0) - 1);
+          updates.lives = newLives;
+          if (newLives <= 0) updates.knocked_out = true;
+        }
+        await db.from('players').update(updates).eq('session_id', SESSION_ID).eq('name', a.player_name);
+      }
+    } else if (settings.hardcore && !ok) {
+      // pts=0 aber trotzdem Leben verlieren
+      const { data: p } = await db.from('players').select('lives,knocked_out')
+        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
+      if (p && p.lives !== null) {
+        const newLives = Math.max(0, (p.lives||0) - 1);
+        await db.from('players').update({ lives: newLives, knocked_out: newLives <= 0 })
+          .eq('session_id', SESSION_ID).eq('name', a.player_name);
+      }
     }
   }
 
   // Dramatic reveal animation
-  // 1. Alle falschen Balken kurz dimmen
-  // 2. Kurze Pause (Spannung)
-  // 3. Richtige Antwort grün aufleuchten + Antwort-Card highlighten
-  await new Promise(resolve => setTimeout(resolve, 400)); // kleine Pause nach Punkte-Vergabe
-
+  await new Promise(resolve => setTimeout(resolve, 400));
   LETTERS.forEach((_,i) => {
     const bar  = document.getElementById(`pbar-${i}`);
     const wrap = document.getElementById(`dbar-wrap-${i}`);
@@ -1160,29 +1412,23 @@ async function hostRevealAnswer() {
       if (card) { card.style.opacity = '0.3'; card.style.filter = 'grayscale(1)'; }
     }
   });
-
-  // Nach 600ms: richtige Antwort aufleuchten
   setTimeout(() => {
     const bar  = document.getElementById(`pbar-${q.correct}`);
     const card = document.getElementById(`hq-ans-${q.correct}`);
     if (bar) bar.classList.add('correct-bar');
     if (card) {
-      card.style.opacity     = '1';
-      card.style.filter      = '';
-      card.style.borderColor = 'var(--green)';
-      card.style.background  = 'rgba(46,204,113,.15)';
-      card.style.transform   = 'scale(1.03)';
+      card.style.opacity = '1'; card.style.filter = '';
+      card.style.borderColor = 'var(--green)'; card.style.background = 'rgba(46,204,113,.15)';
+      card.style.transform = 'scale(1.03)';
       setTimeout(() => { card.style.transform = 'scale(1)'; }, 400);
     }
   }, 600);
 
-  // Show player answers in right column
+  // Player answer grouping
   document.getElementById('hq-player-ans').style.display = 'block';
   const players = await getPlayers();
   const ansMap  = Object.fromEntries(answers.map(a=>[a.player_name,a]));
-
-  // Group by answer index
-  const groups = { correct: [], wrong: {}, none: [] };
+  const groups  = { correct: [], wrong: {}, none: [] };
   for (let i=0;i<4;i++) groups.wrong[i] = [];
   for (const p of players) {
     const a = ansMap[p.name];
@@ -1190,30 +1436,22 @@ async function hostRevealAnswer() {
     else if (a.answer_index === q.correct) groups.correct.push(p.name);
     else groups.wrong[a.answer_index].push(p.name);
   }
-
   let html = '';
-  if (groups.correct.length) {
-    html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--green)">✅ Richtig — ${LETTERS[q.correct]}: ${q.answers[q.correct]}</span></div>${groups.correct.map(n=>`<span class="name-chip correct">${n}</span>`).join('')}</div>`;
-  }
+  if (groups.correct.length) html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--green)">✅ Richtig — ${LETTERS[q.correct]}: ${q.answers[q.correct]}</span></div>${groups.correct.map(n=>`<span class="name-chip correct">${n}</span>`).join('')}</div>`;
   for (let i=0;i<4;i++) {
     if (i===q.correct || !groups.wrong[i].length) continue;
     html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--accent)">❌ ${LETTERS[i]}: ${q.answers[i]}</span></div>${groups.wrong[i].map(n=>`<span class="name-chip wrong">${n}</span>`).join('')}</div>`;
   }
-  if (groups.none.length) {
-    html += `<div class="answer-group"><div class="answer-group-label">⏰ Keine Antwort</div>${groups.none.map(n=>`<span class="name-chip no-ans">${n}</span>`).join('')}</div>`;
-  }
+  if (groups.none.length) html += `<div class="answer-group"><div class="answer-group-label">⏰ Keine Antwort</div>${groups.none.map(n=>`<span class="name-chip no-ans">${n}</span>`).join('')}</div>`;
   document.getElementById('hq-ans-list').innerHTML = html;
 
-  // Zuschauer reveal (falls Voting aktiv und bereits angezeigt)
   if (VIEWER_VOTING_ENABLED) await refreshViewerBars(s, true);
 
   await db.from('game_sessions').update({ phase: 'revealed' }).eq('id', SESSION_ID);
   document.getElementById('btn-reveal').disabled = true;
   document.getElementById('btn-next').disabled   = false;
-  const isLast = s.question_index >= s.questions.length-1;
-  document.getElementById('btn-next').textContent = isLast ? '🏁 Ergebnis' : '▶️ Weiter';
+  document.getElementById('btn-next').textContent = isLastQ ? '🏁 Ergebnis' : '▶️ Weiter';
 
-  // Refresh live ranking + joker overview
   const freshPlayers = await getPlayers();
   updateHostLiveRanking(freshPlayers);
   await updateHostJokerOverview(freshPlayers);
@@ -1418,8 +1656,26 @@ function renderPlayerQuestion(s) {
     }
   }, 1000);
 
-  // Joker laden und rendern
-  initJokers();
+  // Lives anzeigen (Hardcore Mode)
+  const livesEl = document.getElementById('pq-lives');
+  if (LOBBY_SETTINGS.hardcore) {
+    db.from('players').select('lives,knocked_out').eq('session_id', SESSION_ID).eq('name', MY_NAME).single()
+      .then(({ data: pd }) => {
+        if (!pd) return;
+        if (pd.knocked_out) {
+          document.getElementById('pq-knocked').style.display = 'flex';
+          return;
+        }
+        const maxLives = LOBBY_SETTINGS.lives || 1;
+        livesEl.style.display = 'flex';
+        livesEl.innerHTML = Array.from({length: maxLives}, (_,i) =>
+          `<span class="life-heart ${i < pd.lives ? '' : 'lost'}">❤️</span>`).join('');
+      });
+  } else {
+    livesEl.style.display = 'none';
+  }
+
+  document.getElementById('pq-knocked').style.display = 'none';
   // Wenn Timer bereits läuft, sofort synchronisieren
   getSession().then(fresh => { if (fresh?.timer_started_at) syncPlayerTimer(fresh); });
 
@@ -1479,14 +1735,41 @@ async function confirmAnswer() {
 
 async function playerShowResult(s) {
   const q = s.questions[s.question_index];
+  const settings = s.settings || LOBBY_SETTINGS;
+  const isLastQ  = s.question_index >= s.questions.length - 1;
   const { data: ans } = await db.from('answers').select('*').eq('session_id', SESSION_ID).eq('player_name', MY_NAME).eq('question_index', s.question_index).single();
+  // Check High-Risk joker used
+  const { data: hrJ } = await db.from('joker_usage').select('id').eq('session_id', SESSION_ID)
+    .eq('player_name', MY_NAME).eq('joker_type', 'highrisk').eq('question_index', s.question_index).single().catch(()=>({data:null}));
+  const isHighRisk = !!hrJ;
+  const hrPts = isLastQ ? 5 : 3;
+
   const resultEl = document.getElementById('pq-result'); resultEl.style.display = 'block';
-  if (!ans || ans.answer_index === null) resultEl.innerHTML = `<span style="color:var(--muted)">⏰ Keine Antwort</span>`;
-  else if (ans.is_correct) resultEl.innerHTML = `<span style="color:var(--green)">✅ Richtig! +${POINTS_CORRECT} Punkte</span>`;
-  else resultEl.innerHTML = `<span style="color:var(--accent)">❌ Falsch! Richtig: ${LETTERS[q.correct]}</span>`;
+  if (!ans || ans.answer_index === null) {
+    resultEl.innerHTML = `<span style="color:var(--muted)">⏰ Keine Antwort</span>`;
+  } else if (ans.is_correct) {
+    const gainPts = isHighRisk ? hrPts : (settings.scoring === 'speed' ? '?' : POINTS_CORRECT);
+    const badge = isHighRisk ? `🎲 +${gainPts}` : `+${gainPts}`;
+    resultEl.innerHTML = `<span style="color:var(--green)">✅ Richtig! ${badge} Punkte</span>`;
+  } else {
+    const losePts = isHighRisk ? ` 🎲 −${hrPts} Punkte` : '';
+    resultEl.innerHTML = `<span style="color:var(--accent)">❌ Falsch! Richtig: ${LETTERS[q.correct]}${losePts}</span>`;
+  }
   document.querySelectorAll('.answer-btn').forEach((b,i)=>{ b.classList.remove('selected'); if(i===q.correct) b.classList.add('correct'); else if(ans&&ans.answer_index===i) b.classList.add('wrong'); });
-  const { data: p } = await db.from('players').select('score').eq('session_id', SESSION_ID).eq('name', MY_NAME).single();
-  if (p) document.getElementById('pq-score').textContent = p.score||0;
+  const { data: p } = await db.from('players').select('score,lives,knocked_out').eq('session_id', SESSION_ID).eq('name', MY_NAME).single();
+  if (p) {
+    document.getElementById('pq-score').textContent = p.score||0;
+    // Update lives display
+    if (settings.hardcore && p.lives !== null) {
+      const livesEl = document.getElementById('pq-lives');
+      livesEl.style.display = 'flex';
+      livesEl.innerHTML = Array.from({length: settings.lives||1}, (_,i) =>
+        `<span class="life-heart ${i < p.lives ? '' : 'lost'}">❤️</span>`).join('');
+      if (p.knocked_out) {
+        setTimeout(() => { document.getElementById('pq-knocked').style.display = 'flex'; }, 1500);
+      }
+    }
+  }
 }
 
 // ── VIEWER ───────────────────────────────
@@ -1611,6 +1894,7 @@ async function updateHostJokerOverview(players) {
     { type: 'audience', icon: '👥', cls: 'j-audience' },
     { type: 'host',     icon: '🆘', cls: 'j-host'     },
     { type: 'fifty',    icon: '½',  cls: 'j-fifty'    },
+    { type: 'highrisk', icon: '🎲', cls: 'j-highrisk' },
   ];
   el.innerHTML = players.map(p => {
     const pUsed = used[p.name] || new Set();
@@ -1791,23 +2075,31 @@ async function initJokers() {
 }
 
 function renderJokerBar() {
-  ['audience','host','fifty'].forEach(type => {
+  const allTypes = ['audience','host','fifty','highrisk'];
+  allTypes.forEach(type => {
     const btn = document.getElementById(`joker-${type}`);
     if (!btn) return;
-    const spent = usedJokers.has(type);
-    btn.disabled = spent;
+    const disabled  = LOBBY_SETTINGS.jokers?.[type] === false;
+    const spent     = usedJokers.has(type);
+    btn.style.display = disabled ? 'none' : 'flex';
+    btn.disabled      = spent;
     btn.classList.toggle('used', spent);
-    // Tooltip wenn verbraucht
-    btn.title = spent ? `${type === 'audience' ? 'Publikumsjoker' : type === 'host' ? 'Host-Hilfe' : '50:50'} bereits verwendet` : '';
+    btn.title = spent ? 'Bereits verwendet' : (type === 'highrisk' ? '🎲 High Risk: ±3 Punkte (letzte Frage: ±5)' : '');
   });
 }
 
 async function useJoker(type) {
   if (usedJokers.has(type)) return;
+  // Settings-Check
+  const sett = LOBBY_SETTINGS;
+  if (sett.jokers?.[type] === false) { showToast('⛔ Dieser Joker ist deaktiviert!'); return; }
+
   const s = await getSession();
   if (!s || s.phase !== 'question') { showToast('Joker nur während einer Frage!'); return; }
+  // Settings aus Session nehmen falls vorhanden
+  if (s.settings) Object.assign(LOBBY_SETTINGS, s.settings);
 
-  // Prüfen ob bereits ein Joker in DIESER Runde (question_index) benutzt wurde
+  // 1 Joker pro Frage
   const { data: thisRound } = await db.from('joker_usage')
     .select('id').eq('session_id', SESSION_ID).eq('player_name', MY_NAME)
     .eq('question_index', s.question_index);
@@ -1816,26 +2108,20 @@ async function useJoker(type) {
   }
 
   if (type === 'fifty') {
-    // 50:50: zwei falsche Antworten ausblenden
     const wrongIdxs = [0,1,2,3].filter(i => i !== s.questions[s.question_index].correct);
-    const toHide = shuffle(wrongIdxs).slice(0, 2);
-    toHide.forEach(i => {
+    shuffle(wrongIdxs).slice(0,2).forEach(i => {
       const btn = document.getElementById(`pans-${i}`);
       if (btn) { btn.style.opacity = '0.15'; btn.style.pointerEvents = 'none'; btn.disabled = true; }
     });
     showToast('50:50 — Zwei Antworten ausgeblendet!');
   } else if (type === 'audience') {
-    // Publikumsjoker: Viewer-Antworten aus Supabase laden
     const vAnswers = await getViewerAnswers(s.question_index);
-    if (!vAnswers.length) {
-      showToast('👥 Noch keine Zuschauer-Stimmen vorhanden!'); return;
-    }
+    if (!vAnswers.length) { showToast('👥 Noch keine Zuschauer-Stimmen vorhanden!'); return; }
     const counts = [0,0,0,0];
     for (const a of vAnswers) counts[a.answer_index]++;
     const total = vAnswers.length;
     const q = s.questions[s.question_index];
-    const resultEl = document.getElementById('pq-audience-result');
-    const barsEl   = document.getElementById('pq-audience-bars');
+    const barsEl = document.getElementById('pq-audience-bars');
     barsEl.innerHTML = LETTERS.map((l,i) => {
       const pct = Math.round(counts[i]/total*100);
       return `<div class="dist-wrap" style="margin-bottom:8px">
@@ -1843,23 +2129,29 @@ async function useJoker(type) {
         <div class="dist-bar"><div class="dist-fill viewer-fill" style="width:0%" data-w="${pct}"></div></div>
       </div>`;
     }).join('');
-    resultEl.style.display = 'block';
+    document.getElementById('pq-audience-result').style.display = 'block';
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       barsEl.querySelectorAll('.dist-fill').forEach(b=>{ b.style.width=b.dataset.w+'%'; });
     }));
     showToast(`👥 ${total} Zuschauer haben abgestimmt`);
   } else if (type === 'host') {
-    // Host-Joker: Signal an Host senden
     showToast('🆘 Hilfe-Signal an den Host gesendet!');
+  } else if (type === 'highrisk') {
+    const isLastQ = s.question_index >= s.questions.length - 1;
+    const pts = isLastQ ? 5 : 3;
+    showToast(`🎲 High Risk aktiv! ✅ +${pts} Punkte oder ❌ −${pts} Punkte`);
+    document.querySelectorAll('#pq-answers .answer-btn').forEach(b => {
+      b.style.boxShadow = '0 0 0 2px rgba(255,107,53,.6)';
+    });
   }
 
-  // In DB speichern (verhindert Doppelnutzung)
   await db.from('joker_usage').insert({
     session_id: SESSION_ID, player_name: MY_NAME,
     joker_type: type, question_index: s.question_index
   });
   usedJokers.add(type);
   renderJokerBar();
+}
 }
 
 // ── TIMER ─────────────────────────────────
@@ -1869,12 +2161,12 @@ const CIRCUMFERENCE = 2 * Math.PI * 26;
 
 async function hostStartTimer() {
   if (timerInterval) return;
+  const duration = LOBBY_SETTINGS.timer || TIMER_SECONDS;
   const btn = document.getElementById('btn-timer');
   btn.disabled = true;
-  // Speichere Timer-Start in Supabase → alle Spieler sehen ihn
   const now = new Date().toISOString();
-  await db.from('game_sessions').update({ timer_started_at: now, timer_duration: TIMER_SECONDS }).eq('id', SESSION_ID);
-  runHostTimerUI(TIMER_SECONDS);
+  await db.from('game_sessions').update({ timer_started_at: now, timer_duration: duration }).eq('id', SESSION_ID);
+  runHostTimerUI(duration);
 }
 
 function runHostTimerUI(seconds) {
@@ -1932,11 +2224,10 @@ function syncPlayerTimer(s) {
     numEl.textContent = remaining;
     numEl.className = remaining <= 10 ? 'urgent' : '';
     fill.style.width = (remaining / duration * 100) + '%';
-    // Tick-Sound nur wenn noch nicht geantwortet
+    // Tick-Sound NUR in den letzten 10 Sekunden
     const notAnswered = document.getElementById('pq-waiting')?.style.display === 'none'
-                     && document.getElementById('pq-confirm')?.style.display !== 'none'
-                     || window._selectedAnswer === null;
-    if (notAnswered && !alreadyAnswered) playTickSound(remaining);
+                     && window._selectedAnswer === null;
+    if (notAnswered && remaining <= 10) playTickSound(remaining);
     remaining--;
   }
   tick();
