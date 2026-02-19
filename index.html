@@ -643,8 +643,8 @@ textarea { resize: vertical; min-height: 80px; }
     <div id="hp-answers"  style="font-size:.88rem;margin-bottom:14px"></div>
     <div class="gap">
       <button class="btn btn-secondary btn-full" id="btn-timer"       onclick="hostStartTimer()">⏱️ Timer starten</button>
-      <button class="btn btn-secondary btn-full" id="btn-dist"        onclick="hostShowDistribution()">📊 Spieler-Verteilung</button>
       <button class="btn btn-purple   btn-full" id="btn-viewer-dist"  onclick="hostShowViewerDist()" style="display:none">👁️ Zuschauer-Voting</button>
+      <button class="btn btn-secondary btn-full" id="btn-dist"        onclick="hostShowDistribution()">📊 Spieler-Verteilung</button>
       <button class="btn btn-gold     btn-full" id="btn-reveal"       onclick="hostRevealAnswer()"   disabled>✅ Auflösung &amp; Punkte</button>
       <button class="btn btn-primary  btn-full" id="btn-next"         onclick="hostNextQuestion()"   disabled>▶️ Weiter</button>
     </div>
@@ -1356,76 +1356,87 @@ async function hostShowViewerDist() {
 }
 
 async function hostRevealAnswer() {
-  const s = await getSession(), q = s.questions[s.question_index];
-  const answers = await getAnswers(s.question_index);
+  document.getElementById('btn-reveal').disabled = true; // sofort sperren gegen Doppelklick
+
+  const s = await getSession();
+  if (!s) return;
+  const q        = s.questions[s.question_index];
   const settings = parseSettings(s.settings) || LOBBY_SETTINGS;
   const isLastQ  = s.question_index >= s.questions.length - 1;
 
-  // Award points with all modifiers
+  // Alle Daten in einem Zug holen
+  const [answers, players, jokerRows] = await Promise.all([
+    getAnswers(s.question_index),
+    getPlayers(),
+    db.from('joker_usage').select('player_name,joker_type')
+      .eq('session_id', SESSION_ID).eq('question_index', s.question_index)
+      .eq('joker_type', 'highrisk').then(r => r.data || [])
+  ]);
+
+  const hrPlayers = new Set(jokerRows.map(j => j.player_name));
+  const playerMap = Object.fromEntries(players.map(p => [p.name, p]));
+
+  // Punkte lokal berechnen
+  const scoreUpdates = []; // { name, newScore, lives, knocked_out }
   for (const a of answers) {
-    const ok = a.answer_index === q.correct;
-    await db.from('answers').update({ is_correct: ok }).eq('id', a.id);
+    const ok         = a.answer_index === q.correct;
+    const isHighRisk = hrPlayers.has(a.player_name);
+    const p          = playerMap[a.player_name];
+    if (!p) continue;
 
-    // Check if this player used High-Risk joker this question
-    const { data: hrJoker } = await db.from('joker_usage').select('id')
-      .eq('session_id', SESSION_ID).eq('player_name', a.player_name)
-      .eq('joker_type', 'highrisk').eq('question_index', s.question_index).single().catch(()=>({data:null}));
-    const isHighRisk = !!hrJoker;
-
-    // Calculate base points
     let pts = 0;
     if (settings.scoring === 'speed' && ok && a.answered_at && s.timer_started_at) {
       const elapsed  = (new Date(a.answered_at) - new Date(s.timer_started_at)) / 1000;
-      const maxTime  = settings.speedTime || 20;
-      const fraction = Math.max(0, 1 - elapsed / maxTime);
-      pts = Math.round(fraction * 100);
-      if (pts < 1 && ok) pts = 1; // mindestens 1 Punkt wenn richtig
+      const fraction = Math.max(0, 1 - elapsed / (settings.speedTime || 20));
+      pts = Math.max(1, Math.round(fraction * 100));
     } else {
-      pts = ok ? POINTS_CORRECT : 0;
+      pts = ok ? (POINTS_CORRECT || 1) : 0;
     }
+    if (isHighRisk) pts = ok ? (isLastQ ? 5 : 3) : -(isLastQ ? 5 : 3);
 
-    // High-Risk modifier
-    if (isHighRisk) {
-      const hrPts = isLastQ ? 5 : 3;
-      pts = ok ? hrPts : -hrPts;
+    const newScore = Math.max(0, (p.score || 0) + pts);
+    const update   = { name: a.player_name, is_correct: ok, newScore };
+
+    if (settings.hardcore && !ok && p.lives !== null) {
+      const newLives = Math.max(0, (p.lives || 0) - 1);
+      update.lives       = newLives;
+      update.knocked_out = newLives <= 0;
     }
-
-    if (pts !== 0) {
-      const { data: p } = await db.from('players').select('score,lives,knocked_out')
-        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
-      if (p) {
-        const newScore = Math.max(0, (p.score||0) + pts); // Score nicht unter 0
-        let updates = { score: newScore };
-
-        // Hardcore: Leben abziehen wenn falsch
-        if (settings.hardcore && !ok && p.lives !== null) {
-          const newLives = Math.max(0, (p.lives||0) - 1);
-          updates.lives = newLives;
-          if (newLives <= 0) updates.knocked_out = true;
-        }
-        await db.from('players').update(updates).eq('session_id', SESSION_ID).eq('name', a.player_name);
-      }
-    } else if (settings.hardcore && !ok) {
-      // pts=0 aber trotzdem Leben verlieren
-      const { data: p } = await db.from('players').select('lives,knocked_out')
-        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
-      if (p && p.lives !== null) {
-        const newLives = Math.max(0, (p.lives||0) - 1);
-        await db.from('players').update({ lives: newLives, knocked_out: newLives <= 0 })
-          .eq('session_id', SESSION_ID).eq('name', a.player_name);
-      }
-    }
+    scoreUpdates.push(update);
   }
 
-  // Dramatic reveal animation
-  await new Promise(resolve => setTimeout(resolve, 400));
+  // Alle Updates parallel schreiben
+  await Promise.all([
+    // answers.is_correct setzen
+    ...scoreUpdates.map(u =>
+      db.from('answers').update({ is_correct: u.is_correct })
+        .eq('session_id', SESSION_ID).eq('player_name', u.name).eq('question_index', s.question_index)
+    ),
+    // player scores + lives
+    ...scoreUpdates.map(u => {
+      const upd = { score: u.newScore };
+      if (u.lives      !== undefined) upd.lives       = u.lives;
+      if (u.knocked_out !== undefined) upd.knocked_out = u.knocked_out;
+      return db.from('players').update(upd).eq('session_id', SESSION_ID).eq('name', u.name);
+    })
+  ]);
+
+  // Phase sofort auf revealed setzen
+  await db.from('game_sessions').update({ phase: 'revealed' }).eq('id', SESSION_ID);
+
+  // UI — Buttons
+  document.getElementById('btn-next').disabled   = false;
+  document.getElementById('btn-next').textContent = isLastQ ? '🏁 Ergebnis' : '▶️ Weiter';
+
+  // Reveal-Animation
+  await new Promise(r => setTimeout(r, 300));
   LETTERS.forEach((_,i) => {
     const bar  = document.getElementById(`pbar-${i}`);
     const wrap = document.getElementById(`dbar-wrap-${i}`);
     const card = document.getElementById(`hq-ans-${i}`);
     if (i !== q.correct) {
-      if (bar)  { bar.style.opacity  = '0.35'; bar.style.filter = 'grayscale(.8)'; }
-      if (wrap) wrap.style.opacity   = '0.5';
+      if (bar)  { bar.style.opacity = '0.35'; bar.style.filter = 'grayscale(.8)'; }
+      if (wrap) wrap.style.opacity  = '0.5';
       if (card) { card.style.opacity = '0.3'; card.style.filter = 'grayscale(1)'; }
     }
   });
@@ -1441,12 +1452,11 @@ async function hostRevealAnswer() {
     }
   }, 600);
 
-  // Player answer grouping
+  // Spieler-Antworten gruppieren
   document.getElementById('hq-player-ans').style.display = 'block';
-  const players = await getPlayers();
-  const ansMap  = Object.fromEntries(answers.map(a=>[a.player_name,a]));
-  const groups  = { correct: [], wrong: {}, none: [] };
-  for (let i=0;i<4;i++) groups.wrong[i] = [];
+  const ansMap = Object.fromEntries(answers.map(a => [a.player_name, a]));
+  const groups = { correct: [], wrong: {}, none: [] };
+  for (let i = 0; i < 4; i++) groups.wrong[i] = [];
   for (const p of players) {
     const a = ansMap[p.name];
     if (!a || a.answer_index === null) groups.none.push(p.name);
@@ -1455,8 +1465,8 @@ async function hostRevealAnswer() {
   }
   let html = '';
   if (groups.correct.length) html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--green)">✅ Richtig — ${LETTERS[q.correct]}: ${q.answers[q.correct]}</span></div>${groups.correct.map(n=>`<span class="name-chip correct">${n}</span>`).join('')}</div>`;
-  for (let i=0;i<4;i++) {
-    if (i===q.correct || !groups.wrong[i].length) continue;
+  for (let i = 0; i < 4; i++) {
+    if (i === q.correct || !groups.wrong[i].length) continue;
     html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--accent)">❌ ${LETTERS[i]}: ${q.answers[i]}</span></div>${groups.wrong[i].map(n=>`<span class="name-chip wrong">${n}</span>`).join('')}</div>`;
   }
   if (groups.none.length) html += `<div class="answer-group"><div class="answer-group-label">⏰ Keine Antwort</div>${groups.none.map(n=>`<span class="name-chip no-ans">${n}</span>`).join('')}</div>`;
@@ -1464,15 +1474,10 @@ async function hostRevealAnswer() {
 
   if (VIEWER_VOTING_ENABLED) await refreshViewerBars(s, true);
 
-  await db.from('game_sessions').update({ phase: 'revealed' }).eq('id', SESSION_ID);
-  document.getElementById('btn-reveal').disabled = true;
-  document.getElementById('btn-next').disabled   = false;
-  document.getElementById('btn-next').textContent = isLastQ ? '🏁 Ergebnis' : '▶️ Weiter';
-
+  // Live-Anzeigen aktualisieren
   const freshPlayers = await getPlayers();
   updateHostLiveRanking(freshPlayers);
   await updateHostJokerOverview(freshPlayers);
-  updateScoreboardUI('hp-scores', freshPlayers, true);
 }
 
 // Stellt den Revealed-State nach Host-Refresh wieder her (ohne Punkte nochmal zu vergeben)
