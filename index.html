@@ -642,7 +642,7 @@ textarea { resize: vertical; min-height: 80px; }
     <div id="hp-qinfo"    style="font-size:.82rem;color:var(--muted);margin-bottom:8px"></div>
     <div id="hp-answers"  style="font-size:.88rem;margin-bottom:14px"></div>
     <div class="gap">
-      <button class="btn btn-secondary btn-full" id="btn-timer"       onclick="hostStartTimer()">⏱️ 30s Timer starten</button>
+      <button class="btn btn-secondary btn-full" id="btn-timer"       onclick="hostStartTimer()">⏱️ Timer starten</button>
       <button class="btn btn-secondary btn-full" id="btn-dist"        onclick="hostShowDistribution()">📊 Spieler-Verteilung</button>
       <button class="btn btn-purple   btn-full" id="btn-viewer-dist"  onclick="hostShowViewerDist()" style="display:none">👁️ Zuschauer-Voting</button>
       <button class="btn btn-gold     btn-full" id="btn-reveal"       onclick="hostRevealAnswer()"   disabled>✅ Auflösung &amp; Punkte</button>
@@ -721,8 +721,9 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="lbl" style="margin-bottom:12px">Gesamtranking</div>
       <div id="final-ranking"></div>
     </div>
-    <div style="display:flex;justify-content:center;margin-top:24px">
-      <button class="btn btn-primary" onclick="hostResetGame()">🔄 Neues Spiel</button>
+    <div style="display:flex;justify-content:center;gap:12px;margin-top:24px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="hostResetGame()">🔄 Nochmal mit gleicher Lobby</button>
+      <button class="btn btn-primary"   onclick="hostNewSession()">🆕 Neue Lobby erstellen</button>
     </div>
   </div>
 </div>
@@ -1274,6 +1275,7 @@ function renderHostQuestion(s) {
   document.getElementById('btn-reveal').disabled = true;
   document.getElementById('btn-next').disabled   = true;
   document.getElementById('btn-timer').disabled  = false;
+  document.getElementById('btn-timer').textContent = `⏱️ ${LOBBY_SETTINGS.timer || 30}s Timer starten`;
   stopTimer();
   // Zuschauer-Button
   const vBtn = document.getElementById('btn-viewer-dist');
@@ -1536,6 +1538,33 @@ async function hostResetGame() {
   await db.from('players').delete().eq('session_id', SESSION_ID);
   await db.from('game_sessions').update({ phase: 'lobby', question_index: 0, questions: null, timer_started_at: null }).eq('id', SESSION_ID);
   currentQIndex = -1; showView('view-host-dashboard');
+  const players = await getPlayers();
+  updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+  updateHostLiveRanking(players);
+  await updateHostJokerOverview(players);
+  setHostLinks();
+}
+
+async function hostNewSession() {
+  // Neue leere Session in DB anlegen
+  const { data, error } = await db.from('game_sessions')
+    .insert({ phase: 'lobby', viewer_voting: false, settings: settingsPayload() }).select().single();
+  if (error) { showToast('❌ Fehler: ' + error.message); return; }
+  // Alte Realtime-Subscription entfernen
+  if (realtimeSub) { db.removeChannel(realtimeSub); realtimeSub = null; }
+  // Neue Session aktivieren
+  SESSION_ID = data.id;
+  localStorage.setItem('qb_session_id', SESSION_ID);
+  currentQIndex = -1;
+  VIEWER_VOTING_ENABLED = false;
+  subscribeRealtime();
+  showView('view-host-dashboard');
+  updateLobbyUI([]); updateScoreboardUI('host-scores', []);
+  updateHostLiveRanking([]); 
+  document.getElementById('hp-joker-overview').innerHTML = '<div style="color:var(--muted);font-size:.78rem">Warte auf Spieler…</div>';
+  document.getElementById('btn-start').disabled = true;
+  setHostLinks(); updateViewerToggleUI();
+  showToast('🆕 Neue Lobby erstellt!');
 }
 
 // ── VIEWER VOTING TOGGLE ──────────────────
@@ -2194,14 +2223,17 @@ function runHostTimerUI(seconds) {
 
   function tick() {
     numEl.textContent = remaining;
-    fgEl.style.strokeDashoffset = CIRCUMFERENCE * (1 - remaining / TIMER_SECONDS);
-    if (remaining <= 10) { fgEl.classList.add('urgent'); numEl.classList.add('urgent'); }
+    fgEl.style.strokeDashoffset = CIRCUMFERENCE * (1 - remaining / seconds);
+    if (remaining <= 10) { fgEl.classList.add('urgent'); numEl.classList.add('urgent'); playTickSound(remaining); }
     if (remaining <= 0) {
       clearInterval(timerInterval); timerInterval = null;
       playTimerEndSound();
-      hostShowDistribution();
       wrap.style.display = 'none';
       numEl.classList.remove('urgent'); fgEl.classList.remove('urgent');
+      // Nur Distribution anzeigen wenn noch nicht aufgelöst
+      getSession().then(s => {
+        if (s && s.phase === 'question') hostShowDistribution();
+      });
       return;
     }
     remaining--;
