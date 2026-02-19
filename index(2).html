@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuizBattle – Twitch Edition</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.5"></script>
+<style>
+:root {
+  --bg:      #08080f;
+  --surface: #111120;
+  --card:    #14142a;
+  --border:  rgba(255,255,255,.07);
+  --accent:  #e94560;
+  --gold:    #f5c842;
+  --teal:    #0f3460;
+  --green:   #2ecc71;
+  --purple:  #9b59b6;
+  --text:    #f0f0f8;
+  --muted:   #7070a0;
+  --r:       16px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Nunito', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(233,69,96,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(233,69,96,.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.view { display: none; min-height: 100vh; padding: 24px; position: relative; z-index: 1; }
+.view.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#config-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+  background: linear-gradient(90deg, #e94560, #f5c842);
+  color: #000; font-weight: 900; font-size: .85rem;
+  padding: 10px 20px; text-align: center; display: none;
+}
+.logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  letter-spacing: 4px; line-height: 1;
+  text-shadow: 0 0 60px rgba(233,69,96,.5);
+}
+.logo span { color: var(--accent); }
+.tagline { color: var(--muted); font-size: .85rem; letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 32px;
+  width: 100%; max-width: 520px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.6);
+}
+.card.wide { max-width: 760px; }
+input[type=text], textarea {
+  width: 100%; background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 10px;
+  padding: 12px 16px; color: var(--text);
+  font-family: 'Nunito', sans-serif; font-size: 1rem;
+  outline: none; transition: border .2s;
+}
+input[type=text]:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 80px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 26px; border-radius: 12px; border: none; cursor: pointer;
+  font-family: 'Nunito', sans-serif; font-weight: 900; font-size: .95rem;
+  transition: transform .15s, box-shadow .15s;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary   { background: var(--accent);  color: #fff;    box-shadow: 0 6px 24px rgba(233,69,96,.3); }
+.btn-primary:hover:not(:disabled) { box-shadow: 0 10px 32px rgba(233,69,96,.5); }
+.btn-secondary { background: rgba(255,255,255,.07); color: var(--text); border: 1px solid var(--border); }
+.btn-gold      { background: var(--gold);    color: #1a1200; }
+.btn-purple    { background: var(--purple);  color: #fff;    box-shadow: 0 6px 20px rgba(155,89,182,.3); }
+.btn-full      { width: 100%; }
+.role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; width: 100%; max-width: 560px; margin-top: 36px; }
+.role-card {
+  background: var(--card); border: 2px solid var(--border);
+  border-radius: var(--r); padding: 24px 16px;
+  cursor: pointer; text-align: center;
+  transition: border-color .2s, transform .2s, box-shadow .2s;
+}
+.role-card:hover         { border-color: var(--accent); transform: translateY(-4px); box-shadow: 0 16px 40px rgba(233,69,96,.2); }
+.role-card.viewer-card:hover { border-color: var(--purple); box-shadow: 0 16px 40px rgba(155,89,182,.2); }
+.role-card .icon { font-size: 2.2rem; margin-bottom: 10px; }
+.role-card h3 { font-size: 1rem; }
+.role-card p  { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+.progress-bar  { width: 100%; height: 5px; background: rgba(255,255,255,.06); border-radius: 99px; margin-bottom: 24px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--gold)); border-radius: 99px; transition: width .6s ease; }
+.answers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+.answer-btn {
+  background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.09);
+  border-radius: 14px; padding: 18px 14px; cursor: pointer; color: var(--text);
+  font-family: 'Nunito', sans-serif; font-weight: 700; font-size: .95rem;
+  text-align: left; transition: all .2s;
+  display: flex; align-items: center; gap: 12px;
+}
+.answer-btn:hover:not(:disabled)           { border-color: var(--accent);  background: rgba(233,69,96,.1); transform: translateY(-2px); }
+.answer-btn.viewer-btn:hover:not(:disabled){ border-color: var(--purple);  background: rgba(155,89,182,.1); }
+.answer-btn.selected   { border-color: var(--accent);  background: rgba(233,69,96,.18); }
+.answer-btn.v-selected { border-color: var(--purple);  background: rgba(155,89,182,.2); }
+.answer-btn.correct    { border-color: var(--green);   background: rgba(46,204,113,.18); }
+.answer-btn.wrong      { border-color: var(--accent);  background: rgba(233,69,96,.12); opacity: .6; }
+.answer-btn:disabled   { cursor: default; }
+.answer-letter {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(255,255,255,.09);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; flex-shrink: 0;
+}
+.player-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.player-chip {
+  background: rgba(233,69,96,.12); border: 1px solid rgba(233,69,96,.25);
+  border-radius: 50px; padding: 7px 14px;
+  font-weight: 700; font-size: .88rem;
+  display: flex; align-items: center; gap: 7px;
+}
+.dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+.score-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 14px; border-radius: 12px; margin-bottom: 8px;
+  background: rgba(255,255,255,.03);
+}
+.score-row.top1 { background: rgba(245,200,66,.1);  border: 1px solid rgba(245,200,66,.2); }
+.score-row.top2 { background: rgba(192,192,192,.07); }
+.score-row.top3 { background: rgba(205,127,50,.07);  }
+.rank-badge { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Bebas Neue', sans-serif; font-size: 1rem; flex-shrink: 0; }
+.rank-1 { background: var(--gold); color: #000; }
+.rank-2 { background: #c0c0c0;     color: #000; }
+.rank-3 { background: #cd7f32;     color: #fff; }
+.rank-o { background: rgba(255,255,255,.09); color: var(--muted); }
+.score-name { flex: 1; font-weight: 700; }
+.score-pts  { font-family: 'Bebas Neue', sans-serif; font-size: 1.35rem; color: var(--gold); }
+/* ── SCORE BAR ── */
+.score-bar-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.score-bar-track { height: 6px; background: rgba(255,255,255,.07); border-radius: 99px; overflow: hidden; }
+.score-bar-fill  { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--gold)); transition: width 1s cubic-bezier(.4,0,.2,1); }
+/* ── PODIUM ── */
+.podium-wrap { display: flex; align-items: flex-end; justify-content: center; gap: 12px; margin: 28px 0 32px; }
+.podium-col  { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.podium-avatar {
+  width: 64px; height: 64px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem;
+  border: 3px solid transparent; animation: podium-drop .6s ease both;
+}
+.podium-avatar.p1 { background: rgba(245,200,66,.2);  border-color: var(--gold);   width:80px;height:80px;font-size:2rem; }
+.podium-avatar.p2 { background: rgba(192,192,192,.15); border-color: #c0c0c0; }
+.podium-avatar.p3 { background: rgba(205,127,50,.15);  border-color: #cd7f32; }
+@keyframes podium-drop { from{opacity:0;transform:translateY(-20px)} to{opacity:1;transform:translateY(0)} }
+.podium-name { font-weight: 900; font-size: .9rem; text-align: center; max-width: 90px; word-break: break-word; }
+.podium-pts  { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: var(--gold); }
+.podium-block {
+  border-radius: 12px 12px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 2rem; color: rgba(255,255,255,.3);
+}
+.podium-block.b1 { background: rgba(245,200,66,.15);  width: 90px;  height: 90px;  animation-delay:.1s; }
+.podium-block.b2 { background: rgba(192,192,192,.1);  width: 80px;  height: 70px;  animation-delay:.2s; }
+.podium-block.b3 { background: rgba(205,127,50,.1);   width: 80px;  height: 55px;  animation-delay:.3s; }
+/* ── NAME CHIPS on reveal ── */
+.answer-group { margin-bottom: 10px; }
+.answer-group-label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+.name-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 50px; padding: 5px 12px; margin: 3px;
+  font-size: .82rem; font-weight: 700;
+}
+.name-chip.correct { background: rgba(46,204,113,.15); border: 1px solid rgba(46,204,113,.3); color: var(--green); }
+.name-chip.wrong   { background: rgba(233,69,96,.12);  border: 1px solid rgba(233,69,96,.25); color: var(--accent); }
+.name-chip.no-ans  { background: rgba(255,255,255,.05); border: 1px solid var(--border); color: var(--muted); }
+.dist-wrap  { margin-bottom: 10px; }
+.dist-label { display: flex; justify-content: space-between; font-size: .82rem; margin-bottom: 4px; }
+.dist-bar   { height: 30px; border-radius: 8px; background: rgba(255,255,255,.05); overflow: hidden; }
+.dist-fill  {
+  height: 100%; border-radius: 8px;
+  background: linear-gradient(90deg, var(--teal), var(--accent));
+  transition: width .9s cubic-bezier(.4,0,.2,1);
+  display: flex; align-items: center; padding-left: 10px;
+  font-weight: 700; font-size: .82rem; white-space: nowrap;
+}
+.dist-fill.correct-bar  { background: linear-gradient(90deg, #1a6640, var(--green)); }
+.dist-fill.viewer-fill  { background: linear-gradient(90deg, #4a1a6e, var(--purple)); }
+.dist-fill.viewer-correct { background: linear-gradient(90deg, #1a4a2e, var(--green)); }
+.viewer-panel {
+  background: rgba(155,89,182,.08); border: 1px solid rgba(155,89,182,.25);
+  border-radius: 14px; padding: 20px; margin-top: 20px;
+}
+.viewer-badge {
+  background: rgba(155,89,182,.2); border: 1px solid rgba(155,89,182,.4);
+  border-radius: 6px; padding: 4px 10px;
+  font-size: .78rem; font-weight: 700; color: var(--purple);
+}
+.toggle-wrap { display: flex; align-items: center; gap: 10px; font-size: .85rem; }
+.toggle {
+  position: relative; width: 44px; height: 24px;
+  background: rgba(255,255,255,.12); border-radius: 99px; cursor: pointer;
+  transition: background .2s; flex-shrink: 0;
+}
+.toggle.on { background: var(--purple); }
+.toggle::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: transform .2s;
+}
+.toggle.on::after { transform: translateX(20px); }
+.host-panel {
+  position: fixed; top: 16px; right: 16px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px; min-width: 270px;
+  z-index: 100; box-shadow: 0 16px 50px rgba(0,0,0,.6);
+  max-height: calc(100vh - 32px); overflow-y: auto;
+}
+.host-panel h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 12px; }
+.panel-sep { height: 1px; background: var(--border); margin: 14px 0; }
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.75); backdrop-filter: blur(6px);
+  z-index: 300; display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 32px;
+  width: 100%; max-width: 660px; max-height: 82vh; overflow-y: auto;
+}
+.q-item { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+.q-item summary { cursor: pointer; font-weight: 700; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px; }
+.q-item summary::before { content: '▶'; font-size: .7rem; color: var(--muted); transition: transform .2s; }
+.q-item[open] summary::before { transform: rotate(90deg); }
+.q-body { padding-top: 14px; display: grid; gap: 10px; }
+.q-body label { font-size: .75rem; color: var(--muted); display: block; margin-bottom: 3px; }
+.waiting { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; }
+#confetti-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 600; }
+#toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 22px;
+  font-weight: 700; font-size: .9rem; z-index: 700;
+  transition: transform .3s; pointer-events: none;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+.lbl  { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+.badge { background: rgba(233,69,96,.18); border: 1px solid rgba(233,69,96,.35); border-radius: 6px; padding: 4px 10px; font-size: .78rem; font-weight: 700; color: var(--accent); }
+.sep  { height: 1px; background: var(--border); margin: 20px 0; }
+.gap  { display: flex; flex-direction: column; gap: 10px; }
+.row  { display: flex; gap: 10px; flex-wrap: wrap; }
+.q-num  { font-family: 'Bebas Neue', sans-serif; font-size: .95rem; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+.q-text { font-size: clamp(1.15rem, 3vw, 1.55rem); font-weight: 900; line-height: 1.35; }
+/* ── LOGOUT ── */
+#logout-btn {
+  position: fixed; bottom: 20px; right: 20px; z-index: 200;
+  background: rgba(255,255,255,.06); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 14px;
+  font-family: 'Nunito', sans-serif; font-weight: 700; font-size: .78rem;
+  color: var(--muted); cursor: pointer; transition: all .2s; display: none;
+}
+#logout-btn:hover { color: var(--accent); border-color: rgba(233,69,96,.4); }
+/* ── TIMER ── */
+.timer-wrap { text-align: center; margin-bottom: 12px; }
+.timer-ring { position: relative; width: 60px; height: 60px; display: inline-block; }
+.timer-ring svg { transform: rotate(-90deg); display: block; }
+.timer-ring circle { fill: none; stroke-width: 5; }
+.timer-track { stroke: rgba(255,255,255,.08); }
+.timer-fg    { stroke: var(--gold); stroke-linecap: round; transition: stroke-dashoffset .95s linear, stroke .3s; }
+.timer-num   {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: var(--gold);
+}
+.timer-fg.urgent { stroke: var(--accent); }
+.timer-num.urgent { color: var(--accent); }
+/* ── CONFIRM ANSWER ── */
+#pq-confirm {
+  margin-top: 14px; width: 100%;
+  background: linear-gradient(135deg, var(--accent), #c0392b);
+  color: #fff; border: none; border-radius: 14px; padding: 16px;
+  font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 1.05rem;
+  cursor: pointer; display: none;
+  box-shadow: 0 6px 24px rgba(233,69,96,.4);
+  animation: pulse-btn .7s ease infinite alternate;
+}
+@keyframes pulse-btn { from{transform:scale(1);box-shadow:0 6px 24px rgba(233,69,96,.4)} to{transform:scale(1.02);box-shadow:0 10px 32px rgba(233,69,96,.6)} }
+/* ── JOKER ── */
+.joker-bar {
+  display: flex; gap: 8px; margin-top: 16px; justify-content: center; flex-wrap: wrap;
+}
+.joker-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(255,255,255,.05); border: 2px solid rgba(255,255,255,.12);
+  border-radius: 14px; padding: 10px 14px; cursor: pointer;
+  font-family: 'Nunito', sans-serif; font-weight: 700; font-size: .75rem;
+  color: var(--text); transition: all .2s; min-width: 80px;
+}
+.joker-btn .j-icon { font-size: 1.6rem; line-height: 1; }
+.joker-btn:hover:not(:disabled) { transform: translateY(-3px); }
+.joker-btn:disabled { opacity: .3; cursor: not-allowed; filter: grayscale(1); }
+.joker-btn.j-audience:hover:not(:disabled) { border-color: var(--purple); background: rgba(155,89,182,.15); }
+.joker-btn.j-host:hover:not(:disabled)     { border-color: var(--gold);   background: rgba(245,200,66,.12); }
+.joker-btn.j-fifty:hover:not(:disabled)    { border-color: var(--green);  background: rgba(46,204,113,.12); }
+.joker-btn.used { opacity: .25; cursor: not-allowed; filter: grayscale(1) blur(1px); }
+/* Audience joker result panel */
+#pq-audience-result {
+  margin-top: 14px; display: none;
+  background: rgba(155,89,182,.1); border: 1px solid rgba(155,89,182,.3);
+  border-radius: 14px; padding: 16px;
+}
+/* Host help alert */
+.host-help-alert {
+  background: rgba(245,200,66,.12); border: 2px solid rgba(245,200,66,.4);
+  border-radius: 12px; padding: 12px 16px; margin-top: 10px;
+  font-size: .85rem; font-weight: 700; animation: flash-help 1s ease infinite alternate;
+  display: none;
+}
+@keyframes flash-help { from{border-color:rgba(245,200,66,.3)} to{border-color:var(--gold)} }
+/* ── HOST ANSWER ANIMATION ── */
+#hq-answers-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;
+}
+.hq-answer-reveal {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.08);
+  border-radius: 14px; padding: 16px 14px;
+  opacity: 0; transform: translateY(10px) scale(.97);
+  transition: opacity .35s ease, transform .35s cubic-bezier(.34,1.4,.64,1), border-color .3s, background .3s;
+}
+.hq-answer-reveal.visible { opacity: 1; transform: translateY(0) scale(1); }
+.hq-answer-reveal .ha-letter {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(233,69,96,.15); border: 1px solid rgba(233,69,96,.3);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 1.15rem; color: var(--accent);
+}
+.hq-answer-reveal .ha-text { font-weight: 700; font-size: .95rem; line-height: 1.3; }
+/* Distribution bar reveal animation */
+.dist-fill { transition: width 0s; } /* overridden per-bar in JS */
+.dist-fill.reveal-anim { transition: width 1.1s cubic-bezier(.4,0,.2,1); }
+.dist-bar-wrap-reveal {
+  opacity: 0; transform: translateX(-8px);
+  transition: opacity .3s ease, transform .3s ease;
+}
+.dist-bar-wrap-reveal.visible { opacity: 1; transform: translateX(0); }
+/* Correct bar celebration */
+.dist-fill.correct-bar {
+  background: linear-gradient(90deg, #1a6640, var(--green)) !important;
+  animation: correct-pulse .5s ease 3;
+}
+@keyframes correct-pulse {
+  0%,100% { filter: brightness(1); }
+  50%      { filter: brightness(1.4) drop-shadow(0 0 8px rgba(46,204,113,.8)); }
+}
+/* ── PLAYER DELAY OVERLAY ── */
+#pq-delay-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; border-radius: var(--r);
+  transition: opacity .6s ease;
+}
+#pq-delay-overlay.hidden { opacity: 0; pointer-events: none; }
+.delay-ring { position: relative; width: 80px; height: 80px; }
+.delay-ring svg { transform: rotate(-90deg); display: block; }
+.delay-ring circle { fill: none; stroke-width: 6; }
+.delay-track { stroke: rgba(255,255,255,.08); }
+.delay-fg    { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .95s linear; }
+.delay-num   {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 2rem; color: var(--accent);
+}
+/* ── HOST HELP ALERT (größer, oben-fixed) ── */
+#host-help-container {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 500; display: flex; flex-direction: column; gap: 8px;
+  min-width: 320px; max-width: 480px; pointer-events: none;
+}
+.help-alert-item {
+  background: linear-gradient(135deg, rgba(245,200,66,.18), rgba(233,69,96,.1));
+  border: 2px solid var(--gold); border-radius: 16px;
+  padding: 16px 22px; font-weight: 900; font-size: 1.05rem;
+  display: flex; align-items: center; gap: 12px;
+  animation: help-slide-in .35s cubic-bezier(.34,1.56,.64,1) both, flash-help 1.2s ease infinite alternate;
+  box-shadow: 0 8px 32px rgba(245,200,66,.25);
+}
+@keyframes help-slide-in { from{opacity:0;transform:translateY(-16px) scale(.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes flash-help { from{box-shadow:0 8px 32px rgba(245,200,66,.2)} to{box-shadow:0 8px 40px rgba(245,200,66,.5)} }
+.help-alert-item .help-icon { font-size: 1.6rem; flex-shrink: 0; }
+.help-alert-item .help-text { flex: 1; }
+.help-alert-item .help-name { color: var(--gold); }
+/* ── LOBBY SETTINGS ── */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.setting-item  { display: flex; flex-direction: column; gap: 5px; }
+.setting-item .lbl { font-size: .72rem; }
+.setting-row   { display: flex; align-items: center; gap: 10px; }
+.setting-num   {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px; padding: 8px 12px; color: var(--text);
+  font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 1rem;
+  width: 70px; text-align: center; outline: none;
+}
+.setting-num:focus { border-color: var(--accent); }
+.setting-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .88rem; }
+.setting-check input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+.mode-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.05); border: 2px solid rgba(255,255,255,.08);
+  border-radius: 10px; padding: 8px 14px; cursor: pointer;
+  font-size: .82rem; font-weight: 700; transition: all .2s;
+}
+.mode-pill.active { border-color: var(--accent); background: rgba(233,69,96,.12); color: var(--accent); }
+.mode-pill.active-green { border-color: var(--green); background: rgba(46,204,113,.1); color: var(--green); }
+.joker-toggle-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+/* High-Risk Joker */
+.joker-btn.j-highrisk { }
+.joker-btn.j-highrisk:hover:not(:disabled) { border-color: #ff6b35; background: rgba(255,107,53,.12); }
+.joker-pip.j-highrisk { }
+.joker-pip.available.j-highrisk { background: rgba(255,107,53,.2); border-color: rgba(255,107,53,.5); }
+/* Hardcore badge on player view */
+#pq-lives { display:none; justify-content:center; gap:6px; margin-bottom:10px; }
+.life-heart { font-size:1.3rem; line-height:1; }
+.life-heart.lost { filter: grayscale(1); opacity: .25; }
+/* Knocked-out overlay */
+#pq-knocked { display:none; position:absolute; inset:0; z-index:20;
+  background: rgba(8,8,15,.92); border-radius: var(--r);
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  text-align:center; padding:24px;
+}
+/* ── HOST JOKER OVERVIEW ── */
+.joker-overview { margin-top: 4px; }
+.joker-overview-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 0; border-bottom: 1px solid var(--border); gap: 8px;
+  font-size: .8rem;
+}
+.joker-overview-row:last-child { border-bottom: none; }
+.joker-overview-name { font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+.joker-pips { display: flex; gap: 4px; }
+.joker-pip {
+  width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; line-height: 1;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.06);
+  transition: all .3s;
+}
+.joker-pip.available.j-audience { background: rgba(155,89,182,.2); border-color: rgba(155,89,182,.4); }
+.joker-pip.available.j-host     { background: rgba(245,200,66,.15); border-color: rgba(245,200,66,.4); }
+.joker-pip.available.j-fifty    { background: rgba(46,204,113,.15); border-color: rgba(46,204,113,.4); }
+.joker-pip.used { opacity: .22; filter: grayscale(1); }
+/* ── HOST LIVE RANKING (Panel) ── */
+.hp-rank-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; border-bottom: 1px solid var(--border); font-size: .82rem;
+}
+.hp-rank-row:last-child { border-bottom: none; }
+.hp-rank-num { width: 18px; text-align: center; color: var(--muted); font-size: .72rem; flex-shrink: 0; }
+.hp-rank-num.gold { color: var(--gold); font-weight: 900; }
+.hp-rank-name { flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-rank-score { font-family: 'Bebas Neue', sans-serif; font-size: 1.05rem; color: var(--gold); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div id="toast"></div>
+<div id="config-banner">⚠️ Bitte trage deine Supabase-Zugangsdaten im &lt;script&gt;-CONFIG-Block ein</div>
+<button id="logout-btn" onclick="logout()">↩ Abmelden</button>
+<!-- Host-Joker Hilfe-Alerts (fixed, zentral oben) -->
+<div id="host-help-container"></div>
+
+<!-- LANDING -->
+<div id="view-landing" class="view active">
+  <div style="text-align:center;margin-bottom:40px">
+    <div class="logo">Quiz<span>Battle</span></div>
+    <div class="tagline">Twitch Edition · Powered by Supabase</div>
+  </div>
+  <div class="role-grid">
+    <div class="role-card" onclick="goHost()">
+      <div class="icon">🎙️</div><h3>Host</h3><p>Steuerung &amp; Kontrolle</p>
+    </div>
+    <div class="role-card" onclick="showView('view-player-login')">
+      <div class="icon">🎮</div><h3>Spieler</h3><p>Mitspielen &amp; Punkte</p>
+    </div>
+    <div class="role-card viewer-card" onclick="viewerJoin()">
+      <div class="icon">👁️</div><h3>Zuschauer</h3><p>Anonym mitraten</p>
+    </div>
+  </div>
+  <div style="margin-top:24px;font-size:.78rem;color:var(--muted)">
+    Session: <span id="landing-session-id" style="color:var(--accent);font-weight:700">wird geladen…</span>
+  </div>
+</div>
+
+<!-- HOST LOGIN -->
+<div id="view-host-login" class="view">
+  <div class="card">
+    <h2 style="margin-bottom:20px">🎙️ Host-Bereich</h2>
+    <div class="lbl">Host-Passwort</div>
+    <div style="position:relative">
+      <input type="password" id="host-pw" placeholder="Passwort eingeben…" style="padding-right:48px" onkeydown="if(event.key==='Enter')hostLogin()" />
+      <button onclick="togglePwVis()" id="pw-eye-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted);padding:4px" title="Passwort anzeigen">👁️</button>
+    </div>
+    <div class="gap" style="margin-top:16px">
+      <button class="btn btn-primary btn-full" onclick="hostLogin()">Einloggen</button>
+      <button class="btn btn-secondary btn-full" onclick="showView('view-landing')">Zurück</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOST DASHBOARD -->
+<div id="view-host-dashboard" class="view" style="justify-content:flex-start;padding-top:40px">
+  <div style="width:100%;max-width:760px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="logo" style="font-size:2.4rem">Quiz<span>Battle</span></div>
+        <div class="tagline">Host Dashboard</div>
+      </div>
+      <div class="row">
+        <button class="btn btn-secondary" onclick="openEditor()">✏️ Fragen</button>
+        <button class="btn btn-primary" id="btn-start" onclick="startGame()" disabled>🚀 Spiel starten</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <h2>⚙️ Runden-Einstellungen</h2>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:.78rem" onclick="toggleSettings()">Bearbeiten</button>
+      </div>
+      <div id="settings-summary" style="font-size:.82rem;color:var(--muted)">Lädt…</div>
+      <div id="settings-panel" style="display:none;margin-top:16px">
+        <div class="settings-grid">
+          <div class="setting-item">
+            <div class="lbl">🔢 Fragen pro Runde</div>
+            <input class="setting-num" type="number" id="cfg-questions" min="1" max="50" value="20">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">⏱️ Timer (10–60s)</div>
+            <input class="setting-num" type="number" id="cfg-timer" min="10" max="60" value="30">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">👥 Max. Spieler (0=∞)</div>
+            <input class="setting-num" type="number" id="cfg-maxplayers" min="0" max="100" value="0">
+          </div>
+          <div class="setting-item">
+            <div class="lbl">👁️ Max. Zuschauer (0=∞)</div>
+            <input class="setting-num" type="number" id="cfg-maxviewers" min="0" max="9999" value="0">
+          </div>
+        </div>
+        <!-- Punktesystem -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">🏆 Punktesystem</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="mode-pill active" id="pill-classic" onclick="selectScoring('classic')">🎯 Klassisch (1 Pt)</div>
+            <div class="mode-pill" id="pill-speed" onclick="selectScoring('speed')">⚡ Speed-Bonus (bis 100 Pt)</div>
+          </div>
+          <div id="speed-config" style="display:none;margin-top:10px;background:rgba(255,255,255,.03);border-radius:10px;padding:12px">
+            <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">Speed-Bonus: Punkte fallen während der Antwortzeit. Schnellere Antwort = mehr Punkte.</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:.85rem">
+              <span>Max. Antwortzeit:</span>
+              <input class="setting-num" type="number" id="cfg-speedtime" min="5" max="60" value="20" style="width:60px">
+              <span style="color:var(--muted)">s (= 0 Punkte wenn so spät)</span>
+            </div>
+          </div>
+        </div>
+        <!-- Hardcore Mode -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">💀 Hardcore Mode</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div class="mode-pill" id="pill-hardcore" onclick="toggleHardcore()">💀 Aus</div>
+            <div id="hardcore-config" style="display:none;display:flex;align-items:center;gap:8px;font-size:.85rem">
+              <span>Anzahl Leben:</span>
+              <input class="setting-num" type="number" id="cfg-lives" min="1" max="5" value="1" style="width:55px">
+              <span style="color:var(--muted)">Wer alle verliert, scheidet aus</span>
+            </div>
+          </div>
+        </div>
+        <!-- Verfügbare Joker -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">🃏 Verfügbare Joker</div>
+          <div class="joker-toggle-row" id="joker-toggle-row">
+            <label class="setting-check"><input type="checkbox" id="cfg-j-audience" checked> 👥 Publikum</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-host" checked> 🆘 Host-Hilfe</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-fifty" checked> 50:50</label>
+            <label class="setting-check"><input type="checkbox" id="cfg-j-highrisk" checked> 🎲 High Risk</label>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="saveSettings()">💾 Speichern</button>
+      </div>
+    </div>
+    <!-- Lobby -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>👥 Lobby</h2>
+        <div id="player-badge" class="badge">0 Spieler</div>
+      </div>
+      <div id="lobby-list" class="player-grid"></div>
+      <div id="lobby-empty" style="color:var(--muted);font-size:.88rem;margin-top:12px">Noch keine Spieler…</div>
+      <div style="margin-top:16px">
+        <div class="lbl">Spieler-Link — für Mitspieler teilen</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input type="text" id="player-link-input" readonly style="font-size:.82rem;color:var(--accent);border-color:rgba(233,69,96,.3)">
+          <button class="btn btn-secondary" style="padding:12px 16px;flex-shrink:0" onclick="copyPlayerLink()">📋</button>
+        </div>
+      </div>
+    </div>
+    <!-- Viewer Voting Card -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <h2>👁️ Zuschauer-Voting</h2>
+          <div style="font-size:.82rem;color:var(--muted);margin-top:4px">Zuschauer können anonym mitstippen — getrennt vom Spielerstand</div>
+        </div>
+        <div class="toggle-wrap">
+          <div class="toggle" id="viewer-toggle" onclick="toggleViewerVoting()"></div>
+          <span id="viewer-toggle-label" style="color:var(--muted)">Deaktiviert</span>
+        </div>
+      </div>
+      <div id="viewer-link-box" style="display:none;margin-top:16px">
+        <div class="lbl">Zuschauer-Link — im Stream teilen</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input type="text" id="viewer-link-input" readonly style="font-size:.82rem;color:var(--purple);border-color:rgba(155,89,182,.3)">
+          <button class="btn btn-purple" style="padding:12px 16px;flex-shrink:0" onclick="copyViewerLink()">📋 Kopieren</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:16px">🏆 Punktestand</h2>
+      <div id="host-scores"></div>
+    </div>
+  </div>
+</div>
+
+<!-- HOST QUESTION -->
+<div id="view-host-question" class="view" style="justify-content:flex-start;padding-top:40px">
+  <div class="host-panel">
+    <h3>Host Controls</h3>
+    <div id="hp-qinfo"    style="font-size:.82rem;color:var(--muted);margin-bottom:8px"></div>
+    <div id="hp-answers"  style="font-size:.88rem;margin-bottom:14px"></div>
+    <div class="gap">
+      <button class="btn btn-secondary btn-full" id="btn-timer"       onclick="hostStartTimer()">⏱️ 30s Timer starten</button>
+      <button class="btn btn-secondary btn-full" id="btn-dist"        onclick="hostShowDistribution()">📊 Spieler-Verteilung</button>
+      <button class="btn btn-purple   btn-full" id="btn-viewer-dist"  onclick="hostShowViewerDist()" style="display:none">👁️ Zuschauer-Voting</button>
+      <button class="btn btn-gold     btn-full" id="btn-reveal"       onclick="hostRevealAnswer()"   disabled>✅ Auflösung &amp; Punkte</button>
+      <button class="btn btn-primary  btn-full" id="btn-next"         onclick="hostNextQuestion()"   disabled>▶️ Weiter</button>
+    </div>
+    <!-- Timer ring (hidden until started) -->
+    <div id="timer-wrap" class="timer-wrap" style="display:none">
+      <div class="timer-ring">
+        <svg width="60" height="60" viewBox="0 0 60 60">
+          <circle class="timer-track" cx="30" cy="30" r="26"/>
+          <circle class="timer-fg" id="timer-fg" cx="30" cy="30" r="26"
+            stroke-dasharray="163.4" stroke-dashoffset="0"/>
+        </svg>
+        <div class="timer-num" id="timer-num">30</div>
+      </div>
+    </div>
+    <div class="panel-sep"></div>
+    <!-- Joker-Übersicht -->
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1.5px">🃏 Joker-Status</div>
+    <div class="joker-overview" id="hp-joker-overview">
+      <div style="color:var(--muted);font-size:.78rem">Warte auf Spieler…</div>
+    </div>
+    <div class="panel-sep"></div>
+    <!-- Live-Rangliste -->
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1.5px">🏆 Live-Rangliste</div>
+    <div id="hp-live-ranking"></div>
+  </div>
+  <div style="width:100%;max-width:680px;padding-right:290px">
+    <div class="progress-bar"><div class="progress-fill" id="hq-progress"></div></div>
+    <div class="q-num"  id="hq-num"></div>
+    <div class="q-text" id="hq-text" style="margin-bottom:4px"></div>
+    <!-- Animierte Antworten für Host -->
+    <div id="hq-answers-grid" style="margin-top:16px"></div>
+    <!-- Verteilung + Antworten nebeneinander -->
+    <div id="hq-reveal-row" style="display:none;margin-top:28px;display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+        <!-- Links: Spieler-Verteilung -->
+        <div id="hq-dist">
+          <div class="lbl">Spieler-Verteilung — <span id="hq-dist-total"></span></div>
+          <div id="hq-dist-bars" style="margin-top:10px"></div>
+        </div>
+        <!-- Rechts: Wer hat was getippt -->
+        <div id="hq-player-ans" style="display:none">
+          <div class="lbl">Spieler-Antworten</div>
+          <div id="hq-ans-list" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Zuschauer-Voting (erst nach Klick sichtbar) -->
+    <div id="hq-viewer-section" style="display:none">
+      <div class="viewer-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div class="lbl" style="color:var(--purple);margin-bottom:2px">👁️ Zuschauer-Voting</div>
+            <div id="hq-viewer-count" style="font-size:.82rem;color:var(--muted)">0 Stimmen</div>
+          </div>
+          <div class="viewer-badge" id="hq-viewer-badge">Ergebnis</div>
+        </div>
+        <div id="hq-viewer-bars"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HOST FINAL -->
+<div id="view-host-final" class="view" style="justify-content:flex-start;padding-top:40px">
+  <div style="width:100%;max-width:700px">
+    <div style="text-align:center;margin-bottom:8px">
+      <div class="logo" style="font-size:3rem">Quiz<span>Battle</span></div>
+      <div class="tagline">Das war die Runde!</div>
+    </div>
+    <!-- Podium -->
+    <div class="podium-wrap" id="final-podium"></div>
+    <!-- Rest Ranking -->
+    <div class="card wide" style="padding:20px">
+      <div class="lbl" style="margin-bottom:12px">Gesamtranking</div>
+      <div id="final-ranking"></div>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:24px">
+      <button class="btn btn-primary" onclick="hostResetGame()">🔄 Neues Spiel</button>
+    </div>
+  </div>
+</div>
+
+<!-- PLAYER LOGIN -->
+<div id="view-player-login" class="view">
+  <div class="card" style="text-align:center">
+    <div class="logo" style="font-size:2.8rem;margin-bottom:4px">Quiz<span>Battle</span></div>
+    <div class="tagline" style="margin-bottom:28px">Spieler-Login</div>
+    <div class="lbl" style="text-align:left">Dein Name</div>
+    <input type="text" id="pname" placeholder="Name eingeben…" maxlength="20" />
+    <div class="gap" style="margin-top:16px">
+      <button class="btn btn-primary btn-full"   onclick="playerJoin()">Beitreten 🎮</button>
+      <button class="btn btn-secondary btn-full" onclick="showView('view-landing')">Zurück</button>
+    </div>
+  </div>
+</div>
+
+<!-- PLAYER LOBBY -->
+<div id="view-player-lobby" class="view">
+  <div class="card" style="text-align:center">
+    <div style="font-size:2.4rem;margin-bottom:12px">🎮</div>
+    <h2 id="plobby-name" style="margin-bottom:6px"></h2>
+    <div class="tagline" style="margin-bottom:24px">In der Lobby!</div>
+    <div class="waiting" style="justify-content:center"><div class="dot"></div>Warte auf den Host…</div>
+    <div class="sep"></div>
+    <div class="lbl">Mitspieler</div>
+    <div id="plobby-list" class="player-grid" style="justify-content:center;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- PLAYER QUESTION -->
+<div id="view-player-question" class="view">
+  <div style="width:100%;max-width:560px;position:relative">
+    <!-- 6s Delay Overlay -->
+    <div id="pq-delay-overlay">
+      <div style="font-size:.9rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase">Frage wird vorbereitet…</div>
+      <div class="delay-ring">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle class="delay-track" cx="40" cy="40" r="34"/>
+          <circle class="delay-fg" id="delay-fg" cx="40" cy="40" r="34"
+            stroke-dasharray="213.6" stroke-dashoffset="0"/>
+        </svg>
+        <div class="delay-num" id="delay-num">6</div>
+      </div>
+      <div style="font-size:.8rem;color:var(--muted)">Antworten erscheinen gleich…</div>
+    </div>
+    <!-- Lives (Hardcore) -->
+    <div id="pq-lives"></div>
+    <!-- Knocked-out overlay -->
+    <div id="pq-knocked">
+      <div style="font-size:3rem">💀</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:var(--accent)">Ausgeschieden!</div>
+      <div style="color:var(--muted);font-size:.9rem">Du hast alle Leben verloren. Warte auf das Ergebnis…</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="pq-progress"></div></div>
+    <!-- Timer Bar (erscheint wenn Host Timer startet) -->
+    <div id="pq-timer-bar" style="display:none;margin-bottom:16px;background:rgba(255,255,255,.04);border:1px solid rgba(245,200,66,.2);border-radius:12px;padding:10px 14px;align-items:center;gap:12px">
+      <span style="font-size:1rem">⏱️</span>
+      <div id="pq-timer-track" style="flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden">
+        <div id="pq-timer-fill" style="height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),var(--accent));transition:width .95s linear;width:100%"></div>
+      </div>
+      <div id="pq-timer-num" style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--gold);min-width:28px;text-align:right">30</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div class="q-num" id="pq-num"></div>
+      <div style="text-align:right">
+        <div style="font-size:.72rem;color:var(--muted)">Punkte</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:1.8rem;color:var(--gold)" id="pq-score">0</div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:18px"><div class="q-text" id="pq-text"></div></div>
+    <div class="answers-grid" id="pq-answers"></div>
+    <button id="pq-confirm" onclick="confirmAnswer()">✅ Antwort bestätigen</button>
+    <!-- Joker Buttons -->
+    <div class="joker-bar" id="joker-bar">
+      <button class="joker-btn j-audience" id="joker-audience" onclick="useJoker('audience')" title="Publikumsjoker">
+        <span class="j-icon">👥</span><span>Publikum</span>
+      </button>
+      <button class="joker-btn j-host" id="joker-host" onclick="useJoker('host')" title="Host-Joker">
+        <span class="j-icon">🆘</span><span>Host-Hilfe</span>
+      </button>
+      <button class="joker-btn j-fifty" id="joker-fifty" onclick="useJoker('fifty')" title="50:50 Joker">
+        <span class="j-icon">50:50</span><span>Ausblenden</span>
+      </button>
+      <button class="joker-btn j-highrisk" id="joker-highrisk" onclick="useJoker('highrisk')" title="High Risk High Reward">
+        <span class="j-icon">🎲</span><span>High Risk</span>
+      </button>
+    </div>
+    <!-- Publikumsjoker Ergebnis -->
+    <div id="pq-audience-result" style="display:none;margin-top:14px;background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:14px;padding:16px">
+      <div class="lbl" style="color:var(--purple);margin-bottom:10px">👥 Publikums-Tendenz</div>
+      <div id="pq-audience-bars"></div>
+    </div>
+    <div id="pq-waiting" style="display:none;margin-top:20px">
+      <div class="waiting" style="justify-content:center"><div class="dot"></div>Warte auf den Host…</div>
+    </div>
+    <div id="pq-result" style="display:none;margin-top:14px;text-align:center;font-size:1.05rem;font-weight:700"></div>
+  </div>  <!-- end relative container -->
+</div>
+
+<!-- PLAYER FINAL -->
+<div id="view-player-final" class="view" style="justify-content:flex-start;padding-top:32px">
+  <div style="width:100%;max-width:580px">
+    <div style="text-align:center;margin-bottom:8px">
+      <div id="pfinal-emoji" style="font-size:3rem;margin-bottom:8px">🎉</div>
+      <div class="logo" style="font-size:2.6rem">Game Over!</div>
+      <div id="pfinal-msg" class="tagline" style="margin-bottom:16px"></div>
+    </div>
+    <div class="podium-wrap" id="pfinal-podium"></div>
+    <div class="card" style="padding:20px">
+      <div class="lbl" style="margin-bottom:12px">Gesamtranking</div>
+      <div id="pfinal-ranking"></div>
+    </div>
+    <div style="text-align:center;margin-top:20px">
+      <button class="btn btn-secondary" onclick="showView('view-landing')">🏠 Hauptmenü</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEWER LOBBY -->
+<div id="view-viewer-lobby" class="view">
+  <div class="card" style="text-align:center">
+    <div style="font-size:2.6rem;margin-bottom:12px">👁️</div>
+    <div class="logo" style="font-size:2.6rem;color:var(--purple);text-shadow:0 0 40px rgba(155,89,182,.6);margin-bottom:4px">Zuschauer</div>
+    <div class="tagline" style="margin-bottom:24px">Anonym mitstippen</div>
+    <div style="background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.25);border-radius:12px;padding:16px;margin-bottom:20px;font-size:.88rem;line-height:1.6">
+      Deine Stimme ist <strong>komplett anonym</strong> — kein Name, kein Login nötig.<br>
+      Nur der Host sieht die Gesamtauswertung des Chats.
+    </div>
+    <div class="waiting" style="justify-content:center">
+      <div class="dot" style="background:var(--purple)"></div>
+      <span id="viewer-lobby-msg">Warte auf die nächste Frage…</span>
+    </div>
+  </div>
+</div>
+
+<!-- VIEWER QUESTION -->
+<div id="view-viewer-question" class="view">
+  <div style="width:100%;max-width:520px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="background:rgba(155,89,182,.2);border:1px solid rgba(155,89,182,.4);border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:700;color:var(--purple)">👁️ Zuschauer</div>
+      <div class="q-num" id="vq-num" style="color:var(--purple)"></div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="vq-progress" style="background:linear-gradient(90deg,var(--purple),#c39bd3)"></div>
+    </div>
+    <div class="card" style="margin-bottom:18px;border-color:rgba(155,89,182,.2)">
+      <div class="q-text" id="vq-text"></div>
+    </div>
+    <div class="answers-grid" id="vq-answers"></div>
+    <div id="vq-waiting" style="display:none;margin-top:20px">
+      <div class="waiting" style="justify-content:center">
+        <div class="dot" style="background:var(--purple)"></div>Danke für deine Stimme!
+      </div>
+    </div>
+    <div id="vq-result" style="display:none;margin-top:14px;text-align:center;font-size:1rem;font-weight:700"></div>
+  </div>
+</div>
+
+<!-- VIEWER FINAL -->
+<div id="view-viewer-final" class="view">
+  <div class="card" style="text-align:center">
+    <div style="font-size:3rem;margin-bottom:12px">🎊</div>
+    <div class="logo" style="font-size:2.6rem;color:var(--purple)">Danke!</div>
+    <div class="tagline" style="margin-bottom:20px">Das Spiel ist vorbei</div>
+    <div style="font-size:.9rem;color:var(--muted)">Du hast anonym mitgespielt.<br>Schau dem Host bei der Auswertung zu!</div>
+    <div style="margin-top:24px">
+      <button class="btn btn-secondary" onclick="showView('view-landing')">🏠 Hauptmenü</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FRAGEN-EDITOR -->
+<div id="modal-editor" class="modal-overlay">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h2>✏️ Fragen-Editor</h2>
+      <button class="btn btn-secondary" onclick="closeEditor()">✕</button>
+    </div>
+    <div id="editor-list"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn btn-secondary" onclick="editorAddQuestion()">+ Frage</button>
+      <button class="btn btn-primary"   onclick="editorSave()">💾 Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════╗
+// ║  ⚙️  CONFIG                             ║
+// ╚══════════════════════════════════════════╝
+const SUPABASE_URL       = 'https://vpldugbiwouhrkqdwwls.supabase.co';
+const SUPABASE_ANON      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwbGR1Z2Jpd291aHJrcWR3d2xzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MzQwMTQsImV4cCI6MjA4NzAxMDAxNH0.as6LI18zJcynUJ23sTj_wQpLkxIf610QWP61-WlLtAc';
+const HOST_PASSWORD      = 'Kiwi89';
+const QUESTIONS_PER_GAME = 20;
+const POINTS_CORRECT     = 1;
+// ════════════════════════════════════════════
+
+const LETTERS = ['A','B','C','D'];
+let db = null, SESSION_ID = null, MY_NAME = null;
+let IS_HOST = false, IS_VIEWER = false;
+let VIEWER_TOKEN = null, VIEWER_VOTING_ENABLED = false;
+let currentQIndex = -1, realtimeSub = null;
+
+// ── LOBBY SETTINGS (live aus DB geladen) ──
+let LOBBY_SETTINGS = {
+  questions: 20,
+  timer: 30,
+  maxPlayers: 0,
+  maxViewers: 0,
+  scoring: 'classic',   // 'classic' | 'speed'
+  speedTime: 20,
+  hardcore: false,
+  lives: 1,
+  jokers: { audience: true, host: true, fifty: true, highrisk: true }
+};
+
+// Settings sicher aus Session lesen (Supabase gibt JSONB manchmal als String zurück)
+function parseSettings(raw) {
+  if (!raw) return null;
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : null;
+  } catch { return null; }
+}
+// Settings sicher als Plain-Object in DB schreiben (kein Proxy/Class-Instanz)
+function settingsPayload() {
+  return JSON.parse(JSON.stringify(LOBBY_SETTINGS));
+}
+async function init() {
+  if (SUPABASE_URL.startsWith('DEINE') || SUPABASE_ANON.startsWith('DEIN')) {
+    document.getElementById('config-banner').style.display = 'block';
+    document.body.style.paddingTop = '42px';
+    return;
+  }
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // ── SESSION RESOLUTION (Reihenfolge ist wichtig!) ──
+  // 1. URL-Parameter hat immer Vorrang: ?session=xxx
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlSession  = urlParams.get('session');
+  const urlViewer   = urlParams.get('viewer');   // ?viewer=1 → direkt Zuschauer
+
+  if (urlSession) {
+    // Session aus URL laden und im localStorage merken
+    const { data } = await db.from('game_sessions').select('id,phase').eq('id', urlSession).single();
+    if (data) {
+      SESSION_ID = data.id;
+      localStorage.setItem('qb_session_id', SESSION_ID);
+      localStorage.setItem('qb_role', urlViewer ? 'viewer' : (localStorage.getItem('qb_role') || ''));
+    } else {
+      showToast('❌ Session nicht gefunden!'); return;
+    }
+  } else {
+    // 2. Gespeicherte Session aus vorherigem Besuch
+    const saved = localStorage.getItem('qb_session_id');
+    const savedRole = localStorage.getItem('qb_role');
+    if (saved) {
+      const { data } = await db.from('game_sessions').select('id,phase').eq('id', saved).single();
+      if (data) {
+        // Host darf auch bei Phase 'final' reconnecten um Ergebnis zu sehen
+        if (data.phase !== 'final' || savedRole === 'host') {
+          SESSION_ID = data.id;
+        } else {
+          localStorage.removeItem('qb_session_id');
+        }
+      } else {
+        localStorage.removeItem('qb_session_id');
+      }
+    }
+  }
+
+  // 3. Nur wenn KEINE Session gefunden → neue erstellen (nur für Host sinnvoll)
+  //    Spieler/Zuschauer ohne session=-Parameter zeigen eine Fehlermeldung
+  if (!SESSION_ID) {
+    if (urlViewer || localStorage.getItem('qb_role') === 'player') {
+      // Spieler/Zuschauer ohne Link → Hinweis zeigen
+      showNoSessionHint();
+      return;
+    }
+    // Host erstellt neue Session
+    const { data, error } = await db.from('game_sessions')
+      .insert({ phase: 'lobby', viewer_voting: false }).select().single();
+    if (error) { showToast('❌ Supabase-Fehler: ' + error.message); return; }
+    SESSION_ID = data.id;
+    localStorage.setItem('qb_session_id', SESSION_ID);
+  }
+
+  VIEWER_TOKEN = localStorage.getItem('qb_viewer_token') || crypto.randomUUID();
+  localStorage.setItem('qb_viewer_token', VIEWER_TOKEN);
+
+  const sidEl = document.getElementById('landing-session-id');
+  if (sidEl) sidEl.textContent = SESSION_ID.substring(0,8) + '…';
+
+  // Auto-redirect wenn ?viewer=1 in der URL
+  if (urlViewer) {
+    IS_VIEWER = true;
+    localStorage.setItem('qb_role', 'viewer');
+  }
+
+  subscribeRealtime();
+}
+
+function showNoSessionHint() {
+  // Leere Seite durch Hinweis ersetzen
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Nunito',sans-serif;background:#08080f;color:#f0f0f8">
+      <div style="text-align:center;max-width:420px">
+        <div style="font-size:3rem;margin-bottom:16px">🔗</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:3rem;letter-spacing:4px;color:#e94560;margin-bottom:8px">Kein Link</div>
+        <p style="color:#7070a0;line-height:1.6">Du brauchst den <strong style="color:#f0f0f8">Einladungs-Link</strong> vom Host um beizutreten. Bitte frage den Streamer nach dem aktuellen Link!</p>
+      </div>
+    </div>`;
+}
+
+// ── REALTIME ──────────────────────────────
+function subscribeRealtime() {
+  if (realtimeSub) db.removeChannel(realtimeSub);
+  realtimeSub = db.channel('qb-' + SESSION_ID)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'game_sessions',  filter: `id=eq.${SESSION_ID}` }, onSessionChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players',        filter: `session_id=eq.${SESSION_ID}` }, onPlayersChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'answers',        filter: `session_id=eq.${SESSION_ID}` }, onAnswersChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'viewer_answers', filter: `session_id=eq.${SESSION_ID}` }, onViewerAnswersChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'joker_usage',    filter: `session_id=eq.${SESSION_ID}` }, onJokerChange)
+    .subscribe();
+}
+
+async function onSessionChange(payload) {
+  const s = payload.new; if (!s) return;
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+  if (s.viewer_voting !== undefined) { VIEWER_VOTING_ENABLED = s.viewer_voting; updateViewerToggleUI(); }
+  if (!IS_HOST && !IS_VIEWER && s.timer_started_at) syncPlayerTimer(s);
+  if (IS_HOST)        await hostHandlePhase(s);
+  else if (IS_VIEWER) await viewerHandlePhase(s);
+  else                await playerHandlePhase(s);
+}
+
+async function onJokerChange(payload) {
+  const j = payload.new; if (!j) return;
+  const role = localStorage.getItem('qb_role');
+  if (role === 'host') {
+    // Joker-Übersicht aktualisieren
+    const players = await getPlayers();
+    await updateHostJokerOverview(players);
+
+    if (j.joker_type === 'host') {
+      const container = document.getElementById('host-help-container');
+      if (!container) return;
+      const item = document.createElement('div');
+      item.className = 'help-alert-item';
+      item.dataset.player = j.player_name;
+      item.innerHTML = `
+        <span class="help-icon">🆘</span>
+        <span class="help-text"><span class="help-name">${j.player_name}</span> braucht Hilfe!</span>
+      `;
+      container.appendChild(item);
+      showToast(`🆘 ${j.player_name} braucht Hilfe!`);
+    }
+  }
+}
+async function onPlayersChange() {
+  const p = await getPlayers();
+  updateLobbyUI(p);
+  updateScoreboardUI('host-scores', p);
+  if (IS_HOST) {
+    document.getElementById('btn-start').disabled = p.length < 1;
+    updateHostLiveRanking(p);
+    await updateHostJokerOverview(p);
+  }
+}
+async function onAnswersChange() {
+  if (!IS_HOST) return;
+  const s = await getSession(); if (!s || s.phase !== 'question') return;
+  const [answers, players] = await Promise.all([getAnswers(s.question_index), getPlayers()]);
+  document.getElementById('hp-answers').textContent = `✅ ${answers.length} / ${players.length} geantwortet`;
+}
+async function onViewerAnswersChange() {
+  // Kein automatisches Update mehr — Zuschauer-Ergebnis erst auf Host-Klick sichtbar
+  // (Anti-Spoiler)
+}
+
+// ── DB ───────────────────────────────────
+async function getSession() {
+  const { data } = await db.from('game_sessions').select('*').eq('id', SESSION_ID).single(); return data;
+}
+async function getPlayers() {
+  const { data } = await db.from('players').select('*').eq('session_id', SESSION_ID).order('score', { ascending: false }); return data || [];
+}
+async function getAnswers(qi) {
+  const { data } = await db.from('answers').select('*').eq('session_id', SESSION_ID).eq('question_index', qi); return data || [];
+}
+async function getViewerAnswers(qi) {
+  const { data } = await db.from('viewer_answers').select('*').eq('session_id', SESSION_ID).eq('question_index', qi); return data || [];
+}
+async function getMyJokers() {
+  const { data } = await db.from('joker_usage').select('joker_type').eq('session_id', SESSION_ID).eq('player_name', MY_NAME); return (data||[]).map(j=>j.joker_type);
+}
+async function getAllBankQuestions() {
+  const { data } = await db.from('questions_bank').select('*').order('created_at'); return data || [];
+}
+
+// ── VIEWS ────────────────────────────────
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── HOST ─────────────────────────────────
+function goHost() { showView('view-host-login'); }
+
+async function hostLogin() {
+  const pw = document.getElementById('host-pw').value.trim();
+  if (pw !== HOST_PASSWORD) { showToast('❌ Falsches Passwort'); return; }
+  IS_HOST = true; localStorage.setItem('qb_role', 'host');
+  const s = await getSession();
+  VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
+  { const _ps = parseSettings(s?.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+  applySettingsToUI();
+  const players = await getPlayers();
+  updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+  updateHostLiveRanking(players);
+  await updateHostJokerOverview(players);
+  document.getElementById('btn-start').disabled = players.length < 1;
+  showView('view-host-dashboard');
+  setHostLinks(); updateViewerToggleUI();
+  showLogoutBtn();
+}
+
+function togglePwVis() {
+  const inp = document.getElementById('host-pw');
+  const btn = document.getElementById('pw-eye-btn');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
+}
+
+function toggleSettings() {
+  const panel = document.getElementById('settings-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectScoring(mode) {
+  LOBBY_SETTINGS.scoring = mode;
+  document.getElementById('pill-classic').className = 'mode-pill' + (mode==='classic'?' active':'');
+  document.getElementById('pill-speed').className   = 'mode-pill' + (mode==='speed'?' active':'');
+  document.getElementById('speed-config').style.display = mode === 'speed' ? 'block' : 'none';
+}
+
+function toggleHardcore() {
+  LOBBY_SETTINGS.hardcore = !LOBBY_SETTINGS.hardcore;
+  const pill = document.getElementById('pill-hardcore');
+  const cfg  = document.getElementById('hardcore-config');
+  pill.className = 'mode-pill' + (LOBBY_SETTINGS.hardcore ? ' active' : '');
+  pill.textContent = LOBBY_SETTINGS.hardcore ? '💀 An' : '💀 Aus';
+  cfg.style.display = LOBBY_SETTINGS.hardcore ? 'flex' : 'none';
+}
+
+async function saveSettings() {
+  LOBBY_SETTINGS.questions  = Math.max(1,  Math.min(50,  parseInt(document.getElementById('cfg-questions').value)  || 20));
+  LOBBY_SETTINGS.timer      = Math.max(10, Math.min(60,  parseInt(document.getElementById('cfg-timer').value)      || 30));
+  LOBBY_SETTINGS.maxPlayers = Math.max(0,  Math.min(100, parseInt(document.getElementById('cfg-maxplayers').value) || 0));
+  LOBBY_SETTINGS.maxViewers = Math.max(0,               parseInt(document.getElementById('cfg-maxviewers').value) || 0);
+  LOBBY_SETTINGS.speedTime  = Math.max(5,  Math.min(60,  parseInt(document.getElementById('cfg-speedtime').value)  || 20));
+  LOBBY_SETTINGS.lives      = Math.max(1,  Math.min(5,   parseInt(document.getElementById('cfg-lives').value)      || 1));
+  LOBBY_SETTINGS.jokers = {
+    audience: document.getElementById('cfg-j-audience').checked,
+    host:     document.getElementById('cfg-j-host').checked,
+    fifty:    document.getElementById('cfg-j-fifty').checked,
+    highrisk: document.getElementById('cfg-j-highrisk').checked,
+  };
+  await db.from('game_sessions').update({ settings: settingsPayload() }).eq('id', SESSION_ID);
+  updateSettingsSummary();
+  document.getElementById('settings-panel').style.display = 'none';
+  showToast('✅ Einstellungen gespeichert');
+}
+
+function updateSettingsSummary() {
+  const s = LOBBY_SETTINGS;
+  const scoringLabel = s.scoring === 'speed' ? `⚡ Speed-Bonus (${s.speedTime}s)` : '🎯 Klassisch';
+  const hardcoreLabel = s.hardcore ? ` · 💀 Hardcore (${s.lives} Leben)` : '';
+  const maxPLabel = s.maxPlayers > 0 ? ` · max. ${s.maxPlayers} Spieler` : '';
+  document.getElementById('settings-summary').textContent =
+    `${s.questions} Fragen · ⏱️ ${s.timer}s · ${scoringLabel}${hardcoreLabel}${maxPLabel}`;
+}
+
+function applySettingsToUI() {
+  document.getElementById('cfg-questions').value  = LOBBY_SETTINGS.questions;
+  document.getElementById('cfg-timer').value      = LOBBY_SETTINGS.timer;
+  document.getElementById('cfg-maxplayers').value = LOBBY_SETTINGS.maxPlayers;
+  document.getElementById('cfg-maxviewers').value = LOBBY_SETTINGS.maxViewers;
+  document.getElementById('cfg-speedtime').value  = LOBBY_SETTINGS.speedTime;
+  document.getElementById('cfg-lives').value      = LOBBY_SETTINGS.lives;
+  selectScoring(LOBBY_SETTINGS.scoring);
+  // Hardcore
+  if (LOBBY_SETTINGS.hardcore !== (document.getElementById('pill-hardcore').textContent === '💀 An')) toggleHardcore();
+  // Joker checkboxes
+  ['audience','host','fifty','highrisk'].forEach(j => {
+    const el = document.getElementById(`cfg-j-${j}`);
+    if (el) el.checked = LOBBY_SETTINGS.jokers?.[j] !== false;
+  });
+  updateSettingsSummary();
+}
+
+async function startGame() {
+  const allQ = await getAllBankQuestions();
+  if (!allQ.length) { showToast('❌ Keine Fragen!'); return; }
+  const numQ = LOBBY_SETTINGS.questions || QUESTIONS_PER_GAME;
+  const selected = weightedQuestionSelect(allQ, Math.min(numQ, allQ.length))
+    .map(q => ({ q: q.question, answers: q.answers, correct: q.correct, _id: q.id }));
+  const now = new Date().toISOString();
+  for (const q of selected) {
+    await db.from('questions_bank').update({ last_used_at: now }).eq('id', q._id);
+  }
+  const players = await getPlayers();
+  for (const p of players) {
+    const livesVal = LOBBY_SETTINGS.hardcore ? LOBBY_SETTINGS.lives : null;
+    await db.from('players').update({ score: 0, lives: livesVal, knocked_out: false }).eq('id', p.id);
+  }
+  await db.from('answers').delete().eq('session_id', SESSION_ID);
+  await db.from('viewer_answers').delete().eq('session_id', SESSION_ID);
+  await db.from('joker_usage').delete().eq('session_id', SESSION_ID);
+  await db.from('game_sessions').update({
+    phase: 'question', question_index: 0, questions: selected,
+    settings: settingsPayload(), timer_started_at: null
+  }).eq('id', SESSION_ID);
+}
+
+async function hostHandlePhase(s) {
+  if (s.phase === 'question' && currentQIndex !== s.question_index) {
+    currentQIndex = s.question_index; renderHostQuestion(s);
+  } else if (s.phase === 'final') {
+    const p = await getPlayers();
+    renderPodiumAndRanking('final-podium', 'final-ranking', p);
+    showView('view-host-final'); launchConfetti();
+  }
+}
+
+function renderHostQuestion(s) {
+  const q = s.questions[s.question_index], total = s.questions.length;
+  document.getElementById('hq-progress').style.width = (s.question_index/total*100)+'%';
+  document.getElementById('hq-num').textContent  = `Frage ${s.question_index+1} von ${total}`;
+  document.getElementById('hq-text').textContent = q.q;
+  document.getElementById('hp-qinfo').textContent   = `Frage ${s.question_index+1}/${total}`;
+  document.getElementById('hp-answers').textContent = '✅ 0 / ? geantwortet';
+  document.getElementById('hq-reveal-row').style.display       = 'none';
+  document.getElementById('hq-player-ans').style.display       = 'none';
+  document.getElementById('hq-viewer-section').style.display   = 'none';
+  document.getElementById('btn-dist').disabled   = false;
+  document.getElementById('btn-reveal').disabled = true;
+  document.getElementById('btn-next').disabled   = true;
+  document.getElementById('btn-timer').disabled  = false;
+  stopTimer();
+  // Zuschauer-Button
+  const vBtn = document.getElementById('btn-viewer-dist');
+  if (vBtn) { vBtn.style.display = VIEWER_VOTING_ENABLED ? 'flex' : 'none'; vBtn.disabled = false; }
+
+  // Antworten als 2x2 Grid animiert einblenden (wie Spieler-Ansicht)
+  const grid = document.getElementById('hq-answers-grid');
+  grid.innerHTML = LETTERS.map((l,i) =>
+    `<div class="hq-answer-reveal" id="hq-ans-${i}">
+      <div class="ha-letter">${l}</div>
+      <div class="ha-text">${q.answers[i]}</div>
+    </div>`).join('');
+
+  // Alle unsichtbar, dann nacheinander per Pop-In einblenden
+  [0,1,2,3].forEach(i => {
+    setTimeout(() => {
+      const el = document.getElementById(`hq-ans-${i}`);
+      if (el) el.classList.add('visible');
+    }, 3000 + i * 2000);
+  });
+
+  // Help-Alerts für neue Frage leeren
+  document.getElementById('host-help-container').innerHTML = '';
+
+  showView('view-host-question');
+}
+
+async function hostShowDistribution() {
+  const s = await getSession(), q = s.questions[s.question_index];
+  const answers = await getAnswers(s.question_index);
+  const counts = [0,0,0,0];
+  for (const a of answers) if (a.answer_index !== null) counts[a.answer_index]++;
+  const total = answers.length || 1;
+
+  document.getElementById('hq-reveal-row').style.display = 'block';
+  document.getElementById('hq-dist-total').textContent   = `${answers.length} Antworten`;
+
+  // Balken mit Fade+Slide-In rendern
+  document.getElementById('hq-dist-bars').innerHTML = LETTERS.map((l,i) => {
+    const pct = Math.round(counts[i]/total*100);
+    return `<div class="dist-bar-wrap-reveal" id="dbar-wrap-${i}" style="margin-bottom:10px">
+      <div class="dist-label" style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:4px">
+        <span>${l}: ${q.answers[i]}</span><span id="dbar-count-${i}">${counts[i]}</span>
+      </div>
+      <div class="dist-bar">
+        <div class="dist-fill" id="pbar-${i}" style="width:0%" data-pct="${pct}" data-correct="${i===q.correct?1:0}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Nacheinander einblenden (Stagger) dann Balken füllen
+  LETTERS.forEach((_,i) => {
+    setTimeout(() => {
+      const wrap = document.getElementById(`dbar-wrap-${i}`);
+      if (wrap) wrap.classList.add('visible');
+      setTimeout(() => {
+        const bar = document.getElementById(`pbar-${i}`);
+        if (!bar) return;
+        const pct = bar.dataset.pct;
+        bar.classList.add('reveal-anim');
+        bar.style.width = pct + '%';
+        if (pct > 8) bar.textContent = pct + '%';
+      }, 200); // kurze Pause nach Einblenden
+    }, i * 220); // 220ms zwischen jedem Balken
+  });
+
+  document.getElementById('btn-dist').disabled   = true;
+  document.getElementById('btn-reveal').disabled = false;
+  await db.from('game_sessions').update({ phase: 'distribution' }).eq('id', SESSION_ID);
+}
+
+// Neue Funktion: Zuschauer-Verteilung manuell anzeigen (kein Spoiler)
+async function hostShowViewerDist() {
+  const s = await getSession();
+  await refreshViewerBars(s, false);
+  const vBtn = document.getElementById('btn-viewer-dist');
+  if (vBtn) vBtn.disabled = true;
+}
+
+async function hostRevealAnswer() {
+  const s = await getSession(), q = s.questions[s.question_index];
+  const answers = await getAnswers(s.question_index);
+  const settings = parseSettings(s.settings) || LOBBY_SETTINGS;
+  const isLastQ  = s.question_index >= s.questions.length - 1;
+
+  // Award points with all modifiers
+  for (const a of answers) {
+    const ok = a.answer_index === q.correct;
+    await db.from('answers').update({ is_correct: ok }).eq('id', a.id);
+
+    // Check if this player used High-Risk joker this question
+    const { data: hrJoker } = await db.from('joker_usage').select('id')
+      .eq('session_id', SESSION_ID).eq('player_name', a.player_name)
+      .eq('joker_type', 'highrisk').eq('question_index', s.question_index).single().catch(()=>({data:null}));
+    const isHighRisk = !!hrJoker;
+
+    // Calculate base points
+    let pts = 0;
+    if (settings.scoring === 'speed' && ok && a.answered_at && s.timer_started_at) {
+      const elapsed  = (new Date(a.answered_at) - new Date(s.timer_started_at)) / 1000;
+      const maxTime  = settings.speedTime || 20;
+      const fraction = Math.max(0, 1 - elapsed / maxTime);
+      pts = Math.round(fraction * 100);
+      if (pts < 1 && ok) pts = 1; // mindestens 1 Punkt wenn richtig
+    } else {
+      pts = ok ? POINTS_CORRECT : 0;
+    }
+
+    // High-Risk modifier
+    if (isHighRisk) {
+      const hrPts = isLastQ ? 5 : 3;
+      pts = ok ? hrPts : -hrPts;
+    }
+
+    if (pts !== 0) {
+      const { data: p } = await db.from('players').select('score,lives,knocked_out')
+        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
+      if (p) {
+        const newScore = Math.max(0, (p.score||0) + pts); // Score nicht unter 0
+        let updates = { score: newScore };
+
+        // Hardcore: Leben abziehen wenn falsch
+        if (settings.hardcore && !ok && p.lives !== null) {
+          const newLives = Math.max(0, (p.lives||0) - 1);
+          updates.lives = newLives;
+          if (newLives <= 0) updates.knocked_out = true;
+        }
+        await db.from('players').update(updates).eq('session_id', SESSION_ID).eq('name', a.player_name);
+      }
+    } else if (settings.hardcore && !ok) {
+      // pts=0 aber trotzdem Leben verlieren
+      const { data: p } = await db.from('players').select('lives,knocked_out')
+        .eq('session_id', SESSION_ID).eq('name', a.player_name).single();
+      if (p && p.lives !== null) {
+        const newLives = Math.max(0, (p.lives||0) - 1);
+        await db.from('players').update({ lives: newLives, knocked_out: newLives <= 0 })
+          .eq('session_id', SESSION_ID).eq('name', a.player_name);
+      }
+    }
+  }
+
+  // Dramatic reveal animation
+  await new Promise(resolve => setTimeout(resolve, 400));
+  LETTERS.forEach((_,i) => {
+    const bar  = document.getElementById(`pbar-${i}`);
+    const wrap = document.getElementById(`dbar-wrap-${i}`);
+    const card = document.getElementById(`hq-ans-${i}`);
+    if (i !== q.correct) {
+      if (bar)  { bar.style.opacity  = '0.35'; bar.style.filter = 'grayscale(.8)'; }
+      if (wrap) wrap.style.opacity   = '0.5';
+      if (card) { card.style.opacity = '0.3'; card.style.filter = 'grayscale(1)'; }
+    }
+  });
+  setTimeout(() => {
+    const bar  = document.getElementById(`pbar-${q.correct}`);
+    const card = document.getElementById(`hq-ans-${q.correct}`);
+    if (bar) bar.classList.add('correct-bar');
+    if (card) {
+      card.style.opacity = '1'; card.style.filter = '';
+      card.style.borderColor = 'var(--green)'; card.style.background = 'rgba(46,204,113,.15)';
+      card.style.transform = 'scale(1.03)';
+      setTimeout(() => { card.style.transform = 'scale(1)'; }, 400);
+    }
+  }, 600);
+
+  // Player answer grouping
+  document.getElementById('hq-player-ans').style.display = 'block';
+  const players = await getPlayers();
+  const ansMap  = Object.fromEntries(answers.map(a=>[a.player_name,a]));
+  const groups  = { correct: [], wrong: {}, none: [] };
+  for (let i=0;i<4;i++) groups.wrong[i] = [];
+  for (const p of players) {
+    const a = ansMap[p.name];
+    if (!a || a.answer_index === null) groups.none.push(p.name);
+    else if (a.answer_index === q.correct) groups.correct.push(p.name);
+    else groups.wrong[a.answer_index].push(p.name);
+  }
+  let html = '';
+  if (groups.correct.length) html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--green)">✅ Richtig — ${LETTERS[q.correct]}: ${q.answers[q.correct]}</span></div>${groups.correct.map(n=>`<span class="name-chip correct">${n}</span>`).join('')}</div>`;
+  for (let i=0;i<4;i++) {
+    if (i===q.correct || !groups.wrong[i].length) continue;
+    html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--accent)">❌ ${LETTERS[i]}: ${q.answers[i]}</span></div>${groups.wrong[i].map(n=>`<span class="name-chip wrong">${n}</span>`).join('')}</div>`;
+  }
+  if (groups.none.length) html += `<div class="answer-group"><div class="answer-group-label">⏰ Keine Antwort</div>${groups.none.map(n=>`<span class="name-chip no-ans">${n}</span>`).join('')}</div>`;
+  document.getElementById('hq-ans-list').innerHTML = html;
+
+  if (VIEWER_VOTING_ENABLED) await refreshViewerBars(s, true);
+
+  await db.from('game_sessions').update({ phase: 'revealed' }).eq('id', SESSION_ID);
+  document.getElementById('btn-reveal').disabled = true;
+  document.getElementById('btn-next').disabled   = false;
+  document.getElementById('btn-next').textContent = isLastQ ? '🏁 Ergebnis' : '▶️ Weiter';
+
+  const freshPlayers = await getPlayers();
+  updateHostLiveRanking(freshPlayers);
+  await updateHostJokerOverview(freshPlayers);
+  updateScoreboardUI('hp-scores', freshPlayers, true);
+}
+
+// Stellt den Revealed-State nach Host-Refresh wieder her (ohne Punkte nochmal zu vergeben)
+async function restoreRevealedState(s) {
+  const q = s.questions[s.question_index];
+  const answers = await getAnswers(s.question_index);
+  const players = await getPlayers();
+  const ansMap  = Object.fromEntries(answers.map(a=>[a.player_name,a]));
+
+  // Korrekte Antwort grün, falsche dimmen
+  LETTERS.forEach((_,i) => {
+    const bar  = document.getElementById(`pbar-${i}`);
+    const wrap = document.getElementById(`dbar-wrap-${i}`);
+    const card = document.getElementById(`hq-ans-${i}`);
+    if (i !== q.correct) {
+      if (bar)  { bar.style.opacity = '0.35'; bar.style.filter = 'grayscale(.8)'; }
+      if (wrap) wrap.style.opacity  = '0.5';
+      if (card) { card.style.opacity = '0.3'; card.style.filter = 'grayscale(1)'; }
+    } else {
+      if (bar)  bar.classList.add('correct-bar');
+      if (card) { card.style.borderColor = 'var(--green)'; card.style.background = 'rgba(46,204,113,.15)'; }
+    }
+  });
+
+  // Namensliste aufbauen
+  const groups = { correct: [], wrong: {}, none: [] };
+  for (let i=0;i<4;i++) groups.wrong[i] = [];
+  for (const p of players) {
+    const a = ansMap[p.name];
+    if (!a || a.answer_index === null) groups.none.push(p.name);
+    else if (a.answer_index === q.correct) groups.correct.push(p.name);
+    else groups.wrong[a.answer_index].push(p.name);
+  }
+  let html = '';
+  if (groups.correct.length) html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--green)">✅ ${LETTERS[q.correct]}: ${q.answers[q.correct]}</span></div>${groups.correct.map(n=>`<span class="name-chip correct">${n}</span>`).join('')}</div>`;
+  for (let i=0;i<4;i++) {
+    if (i===q.correct || !groups.wrong[i].length) continue;
+    html += `<div class="answer-group"><div class="answer-group-label"><span style="color:var(--accent)">❌ ${LETTERS[i]}: ${q.answers[i]}</span></div>${groups.wrong[i].map(n=>`<span class="name-chip wrong">${n}</span>`).join('')}</div>`;
+  }
+  if (groups.none.length) html += `<div class="answer-group"><div class="answer-group-label">⏰ Keine Antwort</div>${groups.none.map(n=>`<span class="name-chip no-ans">${n}</span>`).join('')}</div>`;
+
+  document.getElementById('hq-player-ans').style.display = 'block';
+  document.getElementById('hq-ans-list').innerHTML = html;
+  document.getElementById('btn-reveal').disabled = true;
+  document.getElementById('btn-next').disabled   = false;
+  const isLast = s.question_index >= s.questions.length-1;
+  document.getElementById('btn-next').textContent = isLast ? '🏁 Ergebnis' : '▶️ Weiter';
+  updateScoreboardUI('hp-scores', players, true);
+}
+
+async function hostNextQuestion() {
+  const s = await getSession(), next = s.question_index+1;
+  if (next >= s.questions.length) {
+    await db.from('game_sessions').update({ phase: 'final', timer_started_at: null }).eq('id', SESSION_ID); return;
+  }
+  await db.from('game_sessions').update({ phase: 'question', question_index: next, timer_started_at: null }).eq('id', SESSION_ID);
+}
+
+async function hostResetGame() {
+  await db.from('answers').delete().eq('session_id', SESSION_ID);
+  await db.from('viewer_answers').delete().eq('session_id', SESSION_ID);
+  await db.from('joker_usage').delete().eq('session_id', SESSION_ID);
+  await db.from('players').delete().eq('session_id', SESSION_ID);
+  await db.from('game_sessions').update({ phase: 'lobby', question_index: 0, questions: null, timer_started_at: null }).eq('id', SESSION_ID);
+  currentQIndex = -1; showView('view-host-dashboard');
+}
+
+// ── VIEWER VOTING TOGGLE ──────────────────
+async function toggleViewerVoting() {
+  VIEWER_VOTING_ENABLED = !VIEWER_VOTING_ENABLED;
+  await db.from('game_sessions').update({ viewer_voting: VIEWER_VOTING_ENABLED }).eq('id', SESSION_ID);
+  updateViewerToggleUI();
+  showToast(VIEWER_VOTING_ENABLED ? '👁️ Zuschauer-Voting aktiviert' : '🔕 Deaktiviert');
+}
+function updateViewerToggleUI() {
+  const toggle = document.getElementById('viewer-toggle');
+  const label  = document.getElementById('viewer-toggle-label');
+  const box    = document.getElementById('viewer-link-box');
+  if (!toggle) return;
+  toggle.classList.toggle('on', VIEWER_VOTING_ENABLED);
+  if (label) label.textContent = VIEWER_VOTING_ENABLED ? 'Aktiviert' : 'Deaktiviert';
+  if (box)   box.style.display = VIEWER_VOTING_ENABLED ? 'block' : 'none';
+  if (VIEWER_VOTING_ENABLED) {
+    const base = window.location.href.split('?')[0];
+    const inp  = document.getElementById('viewer-link-input');
+    if (inp) inp.value = `${base}?session=${SESSION_ID}&viewer=1`;
+  }
+}
+function copyViewerLink() {
+  const inp = document.getElementById('viewer-link-input');
+  navigator.clipboard.writeText(inp.value).then(() => showToast('📋 Viewer-Link kopiert!'));
+}
+function copyPlayerLink() {
+  const inp = document.getElementById('player-link-input');
+  navigator.clipboard.writeText(inp.value).then(() => showToast('📋 Spieler-Link kopiert!'));
+}
+function setHostLinks() {
+  const base = window.location.href.split('?')[0];
+  const pInp = document.getElementById('player-link-input');
+  if (pInp) pInp.value = `${base}?session=${SESSION_ID}`;
+}
+
+async function refreshViewerBars(s, reveal = false) {
+  const q = s.questions[s.question_index];
+  const vAnss = await getViewerAnswers(s.question_index);
+  const counts = [0,0,0,0];
+  for (const a of vAnss) counts[a.answer_index]++;
+  const total = vAnss.length || 1;
+  const countEl = document.getElementById('hq-viewer-count');
+  const barsEl  = document.getElementById('hq-viewer-bars');
+  if (!barsEl) return;
+  if (countEl) countEl.textContent = `${vAnss.length} Stimmen`;
+  barsEl.innerHTML = LETTERS.map((l,i) => {
+    const pct = Math.round(counts[i]/total*100);
+    const cls = reveal ? (i===q.correct ? 'viewer-correct' : 'viewer-fill') : 'viewer-fill';
+    return `<div class="dist-wrap"><div class="dist-label"><span>${l}: ${q.answers[i]}</span><span>${counts[i]}</span></div><div class="dist-bar"><div class="dist-fill ${cls}" style="width:${pct}%">${pct>8?pct+'%':''}</div></div></div>`;
+  }).join('');
+  document.getElementById('hq-viewer-section').style.display = 'block';
+}
+
+// ── PLAYER ───────────────────────────────
+async function playerJoin() {
+  const name = document.getElementById('pname').value.trim();
+  if (!name) { showToast('Bitte Namen eingeben!'); return; }
+  const s = await getSession();
+  if (!s)               { showToast('❌ Keine aktive Session!'); return; }
+  if (s.phase !== 'lobby') { showToast('❌ Spiel läuft bereits!'); return; }
+  const { error } = await db.from('players').upsert({ session_id: SESSION_ID, name, score: 0 }, { onConflict: 'session_id,name' });
+  if (error) { showToast('❌ ' + error.message); return; }
+  MY_NAME = name; localStorage.setItem('qb_my_name', name); localStorage.setItem('qb_role', 'player');
+  document.getElementById('plobby-name').textContent = `Hallo, ${name}! 👋`;
+  updateLobbyUI(await getPlayers(), 'plobby-list');
+  showView('view-player-lobby');
+  showLogoutBtn();
+}
+
+async function playerHandlePhase(s) {
+  if (!MY_NAME) return;
+  if (s.phase === 'question' && currentQIndex !== s.question_index) { currentQIndex = s.question_index; renderPlayerQuestion(s); }
+  else if (s.phase === 'distribution' || s.phase === 'revealed') {
+    if (s.phase === 'revealed') await playerShowResult(s);
+    document.getElementById('pq-waiting').style.display = 'flex';
+  } else if (s.phase === 'final') {
+    const players = await getPlayers();
+    const sorted  = [...players].sort((a,b)=>(b.score||0)-(a.score||0));
+    const myRank  = sorted.findIndex(p=>p.name===MY_NAME)+1;
+    const emojis  = ['🥇','🥈','🥉','🎮','🎮'];
+    document.getElementById('pfinal-emoji').textContent = emojis[Math.min(myRank-1,4)];
+    document.getElementById('pfinal-msg').textContent   = myRank===1 ? 'Du gewinnst! 🎉' : `Platz ${myRank} von ${sorted.length}`;
+    renderPodiumAndRanking('pfinal-podium', 'pfinal-ranking', players);
+    showView('view-player-final');
+  }
+}
+
+function renderPlayerQuestion(s) {
+  const q = s.questions[s.question_index], total = s.questions.length;
+  document.getElementById('pq-progress').style.width = (s.question_index/total*100)+'%';
+  document.getElementById('pq-num').textContent  = `Frage ${s.question_index+1} von ${total}`;
+  document.getElementById('pq-text').textContent = q.q;
+  document.getElementById('pq-waiting').style.display          = 'none';
+  document.getElementById('pq-result').style.display           = 'none';
+  document.getElementById('pq-confirm').style.display          = 'none';
+  document.getElementById('pq-audience-result').style.display  = 'none';
+  document.getElementById('pq-timer-bar').style.display        = 'none';
+  document.getElementById('pq-audience-bars').innerHTML        = '';
+  if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
+  window._selectedAnswer = null;
+
+  // Antworten rendern aber noch versteckt (hinter Overlay)
+  document.getElementById('pq-answers').innerHTML = q.answers.map((a,i)=>
+    `<button class="answer-btn" id="pans-${i}" onclick="selectAnswer(${i})" disabled>
+      <div class="answer-letter">${LETTERS[i]}</div><span>${a}</span>
+    </button>`).join('');
+
+  // 6s Delay Overlay anzeigen
+  const overlay = document.getElementById('pq-delay-overlay');
+  const delayFg  = document.getElementById('delay-fg');
+  const delayNum = document.getElementById('delay-num');
+  const DELAY = 6;
+  const DELAY_CIRC = 2 * Math.PI * 34; // r=34
+  overlay.classList.remove('hidden');
+  overlay.style.opacity = '1';
+  delayFg.style.strokeDasharray  = DELAY_CIRC;
+  delayFg.style.strokeDashoffset = 0;
+  delayNum.textContent = DELAY;
+
+  let remaining = DELAY;
+  const delayTick = setInterval(() => {
+    remaining--;
+    delayNum.textContent = remaining;
+    delayFg.style.strokeDashoffset = DELAY_CIRC * (1 - remaining / DELAY);
+    if (remaining <= 0) {
+      clearInterval(delayTick);
+      // Overlay ausblenden, Buttons freischalten
+      overlay.classList.add('hidden');
+      setTimeout(() => { overlay.style.opacity = '0'; }, 600);
+      document.querySelectorAll('#pq-answers .answer-btn').forEach(b => b.disabled = false);
+    }
+  }, 1000);
+
+  // Lives anzeigen (Hardcore Mode)
+  const livesEl = document.getElementById('pq-lives');
+  if (LOBBY_SETTINGS.hardcore) {
+    db.from('players').select('lives,knocked_out').eq('session_id', SESSION_ID).eq('name', MY_NAME).single()
+      .then(({ data: pd }) => {
+        if (!pd) return;
+        if (pd.knocked_out) {
+          document.getElementById('pq-knocked').style.display = 'flex';
+          return;
+        }
+        const maxLives = LOBBY_SETTINGS.lives || 1;
+        livesEl.style.display = 'flex';
+        livesEl.innerHTML = Array.from({length: maxLives}, (_,i) =>
+          `<span class="life-heart ${i < pd.lives ? '' : 'lost'}">❤️</span>`).join('');
+      });
+  } else {
+    livesEl.style.display = 'none';
+  }
+
+  document.getElementById('pq-knocked').style.display = 'none';
+  // Wenn Timer bereits läuft, sofort synchronisieren
+  getSession().then(fresh => { if (fresh?.timer_started_at) syncPlayerTimer(fresh); });
+
+  // Prüfen ob bereits geantwortet (z.B. nach Reload) → sofort sperren
+  db.from('answers').select('answer_index').eq('session_id', SESSION_ID)
+    .eq('player_name', MY_NAME).eq('question_index', s.question_index).single()
+    .then(({ data: existingAns }) => {
+      if (existingAns && existingAns.answer_index !== null) {
+        // Bereits abgestimmt — alles sperren, Warte-Anzeige zeigen
+        clearInterval(delayTick);
+        overlay.classList.add('hidden');
+        document.querySelectorAll('#pq-answers .answer-btn').forEach((b,i) => {
+          b.disabled = true;
+          if (i === existingAns.answer_index) b.classList.add('selected');
+        });
+        document.getElementById('pq-confirm').style.display = 'none';
+        document.getElementById('pq-waiting').style.display = 'flex';
+        document.getElementById('pq-timer-bar').style.display = 'none';
+        if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
+      }
+    });
+
+  playQuestionSound();
+  showView('view-player-question');
+}
+
+function selectAnswer(idx) {
+  // Highlight selection but don't submit yet
+  document.querySelectorAll('.answer-btn').forEach((b,i) => {
+    b.classList.toggle('selected', i === idx);
+  });
+  window._selectedAnswer = idx;
+  // Show confirm button
+  const confirmBtn = document.getElementById('pq-confirm');
+  confirmBtn.style.display = 'block';
+  confirmBtn.textContent = `✅ ${LETTERS[idx]} bestätigen`;
+}
+
+async function confirmAnswer() {
+  const idx = window._selectedAnswer;
+  if (idx === null || idx === undefined) return;
+  const s = await getSession();
+  if (!s || s.phase !== 'question') return;
+
+  // Lock all buttons + stop tick sound
+  document.querySelectorAll('.answer-btn').forEach(b => b.disabled = true);
+  document.getElementById('pq-confirm').style.display = 'none';
+  document.getElementById('pq-waiting').style.display = 'flex';
+  document.getElementById('pq-timer-bar').style.display = 'none';
+  if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
+
+  await db.from('answers').upsert({
+    session_id: SESSION_ID, player_name: MY_NAME,
+    question_index: s.question_index, answer_index: idx, is_correct: false
+  }, { onConflict: 'session_id,player_name,question_index' });
+}
+
+async function playerShowResult(s) {
+  const q = s.questions[s.question_index];
+  const settings = parseSettings(s.settings) || LOBBY_SETTINGS;
+  const isLastQ  = s.question_index >= s.questions.length - 1;
+  const { data: ans } = await db.from('answers').select('*').eq('session_id', SESSION_ID).eq('player_name', MY_NAME).eq('question_index', s.question_index).single();
+  // Check High-Risk joker used
+  const { data: hrJ } = await db.from('joker_usage').select('id').eq('session_id', SESSION_ID)
+    .eq('player_name', MY_NAME).eq('joker_type', 'highrisk').eq('question_index', s.question_index).single().catch(()=>({data:null}));
+  const isHighRisk = !!hrJ;
+  const hrPts = isLastQ ? 5 : 3;
+
+  const resultEl = document.getElementById('pq-result'); resultEl.style.display = 'block';
+  if (!ans || ans.answer_index === null) {
+    resultEl.innerHTML = `<span style="color:var(--muted)">⏰ Keine Antwort</span>`;
+  } else if (ans.is_correct) {
+    const gainPts = isHighRisk ? hrPts : (settings.scoring === 'speed' ? '?' : POINTS_CORRECT);
+    const badge = isHighRisk ? `🎲 +${gainPts}` : `+${gainPts}`;
+    resultEl.innerHTML = `<span style="color:var(--green)">✅ Richtig! ${badge} Punkte</span>`;
+  } else {
+    const losePts = isHighRisk ? ` 🎲 −${hrPts} Punkte` : '';
+    resultEl.innerHTML = `<span style="color:var(--accent)">❌ Falsch! Richtig: ${LETTERS[q.correct]}${losePts}</span>`;
+  }
+  document.querySelectorAll('.answer-btn').forEach((b,i)=>{ b.classList.remove('selected'); if(i===q.correct) b.classList.add('correct'); else if(ans&&ans.answer_index===i) b.classList.add('wrong'); });
+  const { data: p } = await db.from('players').select('score,lives,knocked_out').eq('session_id', SESSION_ID).eq('name', MY_NAME).single();
+  if (p) {
+    document.getElementById('pq-score').textContent = p.score||0;
+    // Update lives display
+    if (settings.hardcore && p.lives !== null) {
+      const livesEl = document.getElementById('pq-lives');
+      livesEl.style.display = 'flex';
+      livesEl.innerHTML = Array.from({length: settings.lives||1}, (_,i) =>
+        `<span class="life-heart ${i < p.lives ? '' : 'lost'}">❤️</span>`).join('');
+      if (p.knocked_out) {
+        setTimeout(() => { document.getElementById('pq-knocked').style.display = 'flex'; }, 1500);
+      }
+    }
+  }
+}
+
+// ── VIEWER ───────────────────────────────
+async function viewerJoin() {
+  const s = await getSession(); if (!s) { showToast('❌ Keine aktive Session!'); return; }
+  IS_VIEWER = true; localStorage.setItem('qb_role', 'viewer');
+  VIEWER_VOTING_ENABLED = s.viewer_voting || false;
+  if (s.phase === 'lobby' || !VIEWER_VOTING_ENABLED) {
+    document.getElementById('viewer-lobby-msg').textContent = VIEWER_VOTING_ENABLED ? 'Warte auf die nächste Frage…' : 'Voting noch nicht freigeschaltet — bitte warten.';
+    showView('view-viewer-lobby');
+  } else if (s.phase === 'question') {
+    // Bereits abgestimmt? → Lobby zeigen bis nächste Frage
+    const { data: voted } = await db.from('viewer_answers').select('id')
+      .eq('session_id', SESSION_ID).eq('viewer_token', VIEWER_TOKEN)
+      .eq('question_index', s.question_index).single().catch(() => ({ data: null }));
+    if (voted) {
+      document.getElementById('viewer-lobby-msg').textContent = '✅ Stimme bereits abgegeben — warte auf nächste Frage…';
+      showView('view-viewer-lobby');
+    } else {
+      currentQIndex = s.question_index; renderViewerQuestion(s);
+    }
+  } else if (s.phase === 'distribution' || s.phase === 'revealed') {
+    // Frage bereits vorbei — warten
+    document.getElementById('viewer-lobby-msg').textContent = 'Warte auf die nächste Frage…';
+    showView('view-viewer-lobby');
+  } else if (s.phase === 'final') showView('view-viewer-final');
+  else showView('view-viewer-lobby');
+}
+
+async function viewerHandlePhase(s) {
+  if (!IS_VIEWER) return;
+  VIEWER_VOTING_ENABLED = s.viewer_voting || false;
+  if (s.phase === 'question') {
+    if (!VIEWER_VOTING_ENABLED) { showView('view-viewer-lobby'); return; }
+    if (currentQIndex !== s.question_index) { currentQIndex = s.question_index; renderViewerQuestion(s); }
+  } else if (s.phase === 'distribution' || s.phase === 'revealed') {
+    if (s.phase === 'revealed') await viewerShowResult(s);
+    const w = document.getElementById('vq-waiting'); if (w) w.style.display = 'flex';
+  } else if (s.phase === 'final') showView('view-viewer-final');
+  else if (s.phase === 'lobby') showView('view-viewer-lobby');
+}
+
+function renderViewerQuestion(s) {
+  const q = s.questions[s.question_index], total = s.questions.length;
+  document.getElementById('vq-progress').style.width = (s.question_index/total*100)+'%';
+  document.getElementById('vq-num').textContent  = `Frage ${s.question_index+1} von ${total}`;
+  document.getElementById('vq-text').textContent = q.q;
+  document.getElementById('vq-waiting').style.display = 'none';
+  document.getElementById('vq-result').style.display  = 'none';
+  document.getElementById('vq-answers').innerHTML = q.answers.map((a,i)=>
+    `<button class="answer-btn viewer-btn" id="vans-${i}" onclick="viewerAnswer(${i})">
+      <div class="answer-letter" style="background:rgba(155,89,182,.2)">${LETTERS[i]}</div><span>${a}</span>
+    </button>`).join('');
+  playQuestionSound();
+  showView('view-viewer-question');
+}
+
+async function viewerAnswer(idx) {
+  const s = await getSession(); if (!s || s.phase !== 'question') return;
+  document.querySelectorAll('#vq-answers .answer-btn').forEach((b,i)=>{ b.disabled=true; if(i===idx) b.classList.add('v-selected'); });
+  document.getElementById('vq-waiting').style.display = 'flex';
+  await db.from('viewer_answers').upsert({ session_id: SESSION_ID, viewer_token: VIEWER_TOKEN, question_index: s.question_index, answer_index: idx }, { onConflict: 'session_id,viewer_token,question_index' });
+}
+
+async function viewerShowResult(s) {
+  const q = s.questions[s.question_index];
+  const { data: ans } = await db.from('viewer_answers').select('*').eq('session_id', SESSION_ID).eq('viewer_token', VIEWER_TOKEN).eq('question_index', s.question_index).single();
+  const el = document.getElementById('vq-result'); if (!el) return;
+  el.style.display = 'block';
+  if (!ans) el.innerHTML = `<span style="color:var(--muted)">Keine Stimme abgegeben</span>`;
+  else if (ans.answer_index === q.correct) el.innerHTML = `<span style="color:var(--green)">✅ Richtig geraten!</span>`;
+  else el.innerHTML = `<span style="color:var(--muted)">❌ Falsch – Richtig: ${LETTERS[q.correct]}</span>`;
+  document.querySelectorAll('#vq-answers .answer-btn').forEach((b,i)=>{ b.classList.remove('v-selected'); if(i===q.correct) b.classList.add('correct'); else if(ans&&ans.answer_index===i) b.classList.add('wrong'); });
+}
+
+// ── EDITOR ───────────────────────────────
+async function openEditor() { renderEditorList(await getAllBankQuestions()); document.getElementById('modal-editor').classList.add('open'); }
+function closeEditor() { document.getElementById('modal-editor').classList.remove('open'); }
+function renderEditorList(qs) {
+  document.getElementById('editor-list').innerHTML = qs.map((q,i)=>`
+    <details class="q-item">
+      <summary>Frage ${i+1}: ${q.question.substring(0,50)}${q.question.length>50?'…':''}</summary>
+      <div class="q-body">
+        <div><label>Frage</label><textarea data-id="${q.id}" data-field="question">${q.question}</textarea></div>
+        ${q.answers.map((a,ai)=>`
+          <div><label>Antwort ${LETTERS[ai]}${ai===q.correct?' ✅ Richtig':''}</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" data-id="${q.id}" data-ai="${ai}" value="${a}" style="flex:1">
+              <button class="btn btn-secondary" style="padding:8px 12px;font-size:.75rem" onclick="setCorrectAnswer('${q.id}',${ai})">✅</button>
+            </div>
+          </div>`).join('')}
+        <button class="btn btn-secondary" style="width:auto;font-size:.78rem;padding:6px 12px;color:var(--accent)" onclick="deleteQuestion('${q.id}')">🗑️ Löschen</button>
+      </div>
+    </details>`).join('');
+}
+async function setCorrectAnswer(id, ai) { await db.from('questions_bank').update({ correct: ai }).eq('id', id); renderEditorList(await getAllBankQuestions()); showToast('✅ Richtige Antwort gesetzt'); }
+async function deleteQuestion(id) { await db.from('questions_bank').delete().eq('id', id); renderEditorList(await getAllBankQuestions()); showToast('🗑️ Gelöscht'); }
+async function editorAddQuestion() { await db.from('questions_bank').insert({ question: 'Neue Frage…', answers: ['Antwort A','Antwort B','Antwort C','Antwort D'], correct: 0 }); renderEditorList(await getAllBankQuestions()); }
+async function editorSave() {
+  for (const item of document.querySelectorAll('.q-item')) {
+    const qEl = item.querySelector('textarea[data-field="question"]'); if (!qEl) continue;
+    const answers = ['','','',''];
+    for (let ai=0;ai<4;ai++) { const el=item.querySelector(`input[data-ai="${ai}"]`); if(el) answers[ai]=el.value; }
+    await db.from('questions_bank').update({ question: qEl.value, answers }).eq('id', qEl.dataset.id);
+  }
+  closeEditor(); showToast('💾 Fragen gespeichert!');
+}
+
+// ── UI HELPERS ────────────────────────────
+async function updateHostJokerOverview(players) {
+  const el = document.getElementById('hp-joker-overview');
+  if (!el || !players.length) return;
+  // Alle verbrauchten Joker für diese Session laden
+  const { data: allJokers } = await db.from('joker_usage')
+    .select('player_name,joker_type').eq('session_id', SESSION_ID);
+  const used = {}; // { playerName: Set<jokerType> }
+  for (const j of (allJokers || [])) {
+    if (!used[j.player_name]) used[j.player_name] = new Set();
+    used[j.player_name].add(j.joker_type);
+  }
+  const JOKER_DEFS = [
+    { type: 'audience', icon: '👥', cls: 'j-audience' },
+    { type: 'host',     icon: '🆘', cls: 'j-host'     },
+    { type: 'fifty',    icon: '½',  cls: 'j-fifty'    },
+    { type: 'highrisk', icon: '🎲', cls: 'j-highrisk' },
+  ];
+  el.innerHTML = players.map(p => {
+    const pUsed = used[p.name] || new Set();
+    const pips  = JOKER_DEFS.map(j =>
+      `<div class="joker-pip ${j.cls} ${pUsed.has(j.type) ? 'used' : 'available'}" title="${j.type}">${j.icon}</div>`
+    ).join('');
+    return `<div class="joker-overview-row">
+      <span class="joker-overview-name" title="${p.name}">${p.name}</span>
+      <div class="joker-pips">${pips}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateHostLiveRanking(players) {
+  const el = document.getElementById('hp-live-ranking');
+  if (!el) return;
+  const sorted = [...players].sort((a,b) => (b.score||0) - (a.score||0));
+  if (!sorted.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.78rem">Noch keine Punkte…</div>'; return; }
+  const medals = ['🥇','🥈','🥉'];
+  el.innerHTML = sorted.map((p,i) => `
+    <div class="hp-rank-row">
+      <div class="hp-rank-num ${i===0?'gold':''}">${i < 3 ? medals[i] : i+1}</div>
+      <div class="hp-rank-name" title="${p.name}">${p.name}</div>
+      <div class="hp-rank-score">${p.score||0}</div>
+    </div>`).join('');
+}
+
+function updateLobbyUI(players, listId) {
+  const html = players.map(p=>`<div class="player-chip"><div class="dot"></div>${p.name}</div>`).join('');
+  const hostEl = document.getElementById('lobby-list');
+  if (hostEl) {
+    hostEl.innerHTML = html;
+    const noEl = document.getElementById('lobby-empty'), badgeEl = document.getElementById('player-badge');
+    if (noEl) noEl.style.display = players.length ? 'none' : '';
+    if (badgeEl) badgeEl.textContent = `${players.length} Spieler`;
+  }
+  const pEl = document.getElementById(listId || 'plobby-list');
+  if (pEl) pEl.innerHTML = html;
+}
+function updateScoreboardUI(elId, players, compact) {
+  const el = document.getElementById(elId); if (!el) return;
+  if (compact) {
+    el.innerHTML = players.slice(0,8).map((p,i)=>`<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:${i===0?'var(--gold)':'var(--text)'}">${i+1}. ${p.name}</span><span style="font-family:'Bebas Neue',sans-serif;color:var(--gold)">${p.score||0}</span></div>`).join('');
+  } else renderScoreboardEl(el, players);
+}
+function renderScoreboardEl(el, players) {
+  if (!players.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.88rem">Noch keine Punkte…</div>'; return; }
+  const max = Math.max(...players.map(p=>p.score||0), 1);
+  el.innerHTML = players.map((p,i)=>{ const r=i+1; const pct=Math.round((p.score||0)/max*100); return `<div class="score-row ${r<=3?'top'+r:''}">
+    <div class="rank-badge ${r<=3?'rank-'+r:'rank-o'}">${r<=3?['🥇','🥈','🥉'][r-1]:r}</div>
+    <div class="score-bar-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <span style="font-weight:700">${p.name}</span>
+        <span style="font-family:'Bebas Neue',sans-serif;font-size:1.1rem;color:var(--gold)">${p.score||0}</span>
+      </div>
+      <div class="score-bar-track"><div class="score-bar-fill" style="width:0%" data-pct="${pct}"></div></div>
+    </div>
+  </div>`; }).join('');
+  // Animate bars
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    el.querySelectorAll('.score-bar-fill').forEach(b=>{ b.style.width = b.dataset.pct+'%'; });
+  }));
+}
+
+function renderPodiumAndRanking(podiumId, rankingId, players) {
+  const sorted = [...players].sort((a,b)=>(b.score||0)-(a.score||0));
+  const podiumEl  = document.getElementById(podiumId);
+  const rankingEl = document.getElementById(rankingId);
+
+  // Podium: positions 2, 1, 3 (visual order)
+  const order = [sorted[1], sorted[0], sorted[2]].filter(Boolean);
+  const posClass = ['p2','p1','p3'];
+  const blockClass = ['b2','b1','b3'];
+  const delay = ['.2s','.0s','.3s'];
+
+  if (podiumEl) {
+    podiumEl.innerHTML = order.map((p, oi) => {
+      const realIdx = order === sorted ? oi : [1,0,2][oi];
+      const cls  = posClass[oi], bcls = blockClass[oi];
+      const initials = p.name.substring(0,2).toUpperCase();
+      return `<div class="podium-col" style="animation:podium-drop .5s ease ${delay[oi]} both">
+        <div class="podium-avatar ${cls}">${initials}</div>
+        <div class="podium-name">${p.name}</div>
+        <div class="podium-pts">${p.score||0} Pts</div>
+        <div class="podium-block ${bcls}">${['🥈','🥇','🥉'][oi]}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Full ranking list with score bars
+  if (rankingEl) renderScoreboardEl(rankingEl, sorted);
+}
+
+// ── CONFETTI ──────────────────────────────
+function launchConfetti() {
+  const c=document.getElementById('confetti-canvas'), ctx=c.getContext('2d');
+  c.width=window.innerWidth; c.height=window.innerHeight;
+  const colors=['#e94560','#f5c842','#2ecc71','#3498db','#9b59b6'];
+  const p=Array.from({length:180},()=>({ x:Math.random()*c.width,y:-20,w:8+Math.random()*12,h:5+Math.random()*8,color:colors[Math.floor(Math.random()*colors.length)],speed:2+Math.random()*4,angle:Math.random()*Math.PI*2,spin:(Math.random()-.5)*.2,drift:(Math.random()-.5)*2 }));
+  let f=0;
+  (function draw(){ ctx.clearRect(0,0,c.width,c.height); p.forEach(p=>{ ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);ctx.fillStyle=p.color;ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);ctx.restore();p.y+=p.speed;p.x+=p.drift;p.angle+=p.spin;if(p.y>c.height+20){p.y=-20;p.x=Math.random()*c.width;} }); if(++f<420)requestAnimationFrame(draw);else ctx.clearRect(0,0,c.width,c.height); })();
+}
+
+// ── LOGOUT ───────────────────────────────
+function logout() {
+  localStorage.removeItem('qb_role');
+  localStorage.removeItem('qb_my_name');
+  localStorage.removeItem('qb_session_id');
+  IS_HOST = false; IS_VIEWER = false; MY_NAME = null;
+  document.getElementById('logout-btn').style.display = 'none';
+  showView('view-landing');
+  showToast('↩ Abgemeldet');
+}
+function showLogoutBtn() { document.getElementById('logout-btn').style.display = 'block'; }
+
+// ── SOUND (Web Audio API, kein externes File) ──
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playQuestionSound() {
+  try {
+    const ctx = getAudio();
+    // Drei aufsteigende Töne — dezenter Chime
+    [[523, 0], [659, 0.12], [784, 0.24]].forEach(([freq, delay]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.18, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      osc.start(t); osc.stop(t + 0.5);
+    });
+  } catch(e) {}
+}
+function playTimerEndSound() {
+  try {
+    const ctx = getAudio();
+    [[330, 0], [262, 0.15]].forEach(([freq, delay]) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0.2, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.start(t); osc.stop(t + 0.4);
+    });
+  } catch(e) {}
+}
+function playTickSound(remaining) {
+  try {
+    const ctx  = getAudio();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    // Höher und lauter je näher 0
+    osc.type = 'square';
+    osc.frequency.value = remaining <= 5 ? 880 : remaining <= 10 ? 660 : 440;
+    const vol = remaining <= 5 ? 0.12 : remaining <= 10 ? 0.07 : 0.04;
+    const t = ctx.currentTime;
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.start(t); osc.stop(t + 0.08);
+  } catch(e) {}
+}
+
+// ── JOKER ─────────────────────────────────
+let usedJokers = new Set(); // lokal gecacht
+
+async function initJokers() {
+  // Immer frisch aus DB laden — gilt für die ganze Session
+  const used = await getMyJokers();
+  usedJokers = new Set(used);
+  renderJokerBar();
+}
+
+function renderJokerBar() {
+  const allTypes = ['audience','host','fifty','highrisk'];
+  allTypes.forEach(type => {
+    const btn = document.getElementById(`joker-${type}`);
+    if (!btn) return;
+    const disabled  = LOBBY_SETTINGS.jokers?.[type] === false;
+    const spent     = usedJokers.has(type);
+    btn.style.display = disabled ? 'none' : 'flex';
+    btn.disabled      = spent;
+    btn.classList.toggle('used', spent);
+    btn.title = spent ? 'Bereits verwendet' : (type === 'highrisk' ? '🎲 High Risk: ±3 Punkte (letzte Frage: ±5)' : '');
+  });
+}
+
+async function useJoker(type) {
+  if (usedJokers.has(type)) return;
+  // Settings-Check
+  const sett = LOBBY_SETTINGS;
+  if (sett.jokers?.[type] === false) { showToast('⛔ Dieser Joker ist deaktiviert!'); return; }
+
+  const s = await getSession();
+  if (!s || s.phase !== 'question') { showToast('Joker nur während einer Frage!'); return; }
+  // Settings aus Session nehmen falls vorhanden
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+
+  // 1 Joker pro Frage
+  const { data: thisRound } = await db.from('joker_usage')
+    .select('id').eq('session_id', SESSION_ID).eq('player_name', MY_NAME)
+    .eq('question_index', s.question_index);
+  if (thisRound && thisRound.length > 0) {
+    showToast('⚠️ Pro Frage nur ein Joker erlaubt!'); return;
+  }
+
+  if (type === 'fifty') {
+    const wrongIdxs = [0,1,2,3].filter(i => i !== s.questions[s.question_index].correct);
+    shuffle(wrongIdxs).slice(0,2).forEach(i => {
+      const btn = document.getElementById(`pans-${i}`);
+      if (btn) { btn.style.opacity = '0.15'; btn.style.pointerEvents = 'none'; btn.disabled = true; }
+    });
+    showToast('50:50 — Zwei Antworten ausgeblendet!');
+  } else if (type === 'audience') {
+    const vAnswers = await getViewerAnswers(s.question_index);
+    if (!vAnswers.length) { showToast('👥 Noch keine Zuschauer-Stimmen vorhanden!'); return; }
+    const counts = [0,0,0,0];
+    for (const a of vAnswers) counts[a.answer_index]++;
+    const total = vAnswers.length;
+    const q = s.questions[s.question_index];
+    const barsEl = document.getElementById('pq-audience-bars');
+    barsEl.innerHTML = LETTERS.map((l,i) => {
+      const pct = Math.round(counts[i]/total*100);
+      return `<div class="dist-wrap" style="margin-bottom:8px">
+        <div class="dist-label"><span style="font-size:.82rem">${l}: ${q.answers[i]}</span><span style="font-size:.82rem">${pct}%</span></div>
+        <div class="dist-bar"><div class="dist-fill viewer-fill" style="width:0%" data-w="${pct}"></div></div>
+      </div>`;
+    }).join('');
+    document.getElementById('pq-audience-result').style.display = 'block';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      barsEl.querySelectorAll('.dist-fill').forEach(b=>{ b.style.width=b.dataset.w+'%'; });
+    }));
+    showToast(`👥 ${total} Zuschauer haben abgestimmt`);
+  } else if (type === 'host') {
+    showToast('🆘 Hilfe-Signal an den Host gesendet!');
+  } else if (type === 'highrisk') {
+    const isLastQ = s.question_index >= s.questions.length - 1;
+    const pts = isLastQ ? 5 : 3;
+    showToast(`🎲 High Risk aktiv! ✅ +${pts} Punkte oder ❌ −${pts} Punkte`);
+    document.querySelectorAll('#pq-answers .answer-btn').forEach(b => {
+      b.style.boxShadow = '0 0 0 2px rgba(255,107,53,.6)';
+    });
+  }
+
+  await db.from('joker_usage').insert({
+    session_id: SESSION_ID, player_name: MY_NAME,
+    joker_type: type, question_index: s.question_index
+  });
+  usedJokers.add(type);
+  renderJokerBar();
+}
+
+// ── TIMER ─────────────────────────────────
+let timerInterval = null, playerTickInterval = null;
+const TIMER_SECONDS = 30;
+const CIRCUMFERENCE = 2 * Math.PI * 26;
+
+async function hostStartTimer() {
+  if (timerInterval) return;
+  const duration = LOBBY_SETTINGS.timer || TIMER_SECONDS;
+  const btn = document.getElementById('btn-timer');
+  btn.disabled = true;
+  const now = new Date().toISOString();
+  await db.from('game_sessions').update({ timer_started_at: now, timer_duration: duration }).eq('id', SESSION_ID);
+  runHostTimerUI(duration);
+}
+
+function runHostTimerUI(seconds) {
+  const wrap  = document.getElementById('timer-wrap');
+  const numEl = document.getElementById('timer-num');
+  const fgEl  = document.getElementById('timer-fg');
+  wrap.style.display = 'block';
+  let remaining = seconds;
+  fgEl.style.strokeDasharray  = CIRCUMFERENCE;
+  fgEl.style.strokeDashoffset = 0;
+
+  function tick() {
+    numEl.textContent = remaining;
+    fgEl.style.strokeDashoffset = CIRCUMFERENCE * (1 - remaining / TIMER_SECONDS);
+    if (remaining <= 10) { fgEl.classList.add('urgent'); numEl.classList.add('urgent'); }
+    if (remaining <= 0) {
+      clearInterval(timerInterval); timerInterval = null;
+      playTimerEndSound();
+      hostShowDistribution();
+      wrap.style.display = 'none';
+      numEl.classList.remove('urgent'); fgEl.classList.remove('urgent');
+      return;
+    }
+    remaining--;
+  }
+  tick();
+  timerInterval = setInterval(tick, 1000);
+}
+
+// Spieler-Seite: Timer synchronisieren wenn Host ihn startet
+function syncPlayerTimer(s) {
+  if (!s.timer_started_at) return;
+  // Bereits geantwortet? Kein Tick-Sound nötig
+  const alreadyAnswered = document.getElementById('pq-waiting')?.style.display !== 'none';
+
+  const started  = new Date(s.timer_started_at).getTime();
+  const duration = s.timer_duration || TIMER_SECONDS;
+  const elapsed  = Math.floor((Date.now() - started) / 1000);
+  let remaining  = Math.max(0, duration - elapsed);
+
+  const bar    = document.getElementById('pq-timer-bar');
+  const fill   = document.getElementById('pq-timer-fill');
+  const numEl  = document.getElementById('pq-timer-num');
+  if (!bar) return;
+
+  bar.style.display = 'flex';
+  if (playerTickInterval) clearInterval(playerTickInterval);
+
+  function tick() {
+    if (remaining <= 0) {
+      clearInterval(playerTickInterval); playerTickInterval = null;
+      bar.style.display = 'none';
+      return;
+    }
+    numEl.textContent = remaining;
+    numEl.className = remaining <= 10 ? 'urgent' : '';
+    fill.style.width = (remaining / duration * 100) + '%';
+    // Tick-Sound NUR in den letzten 10 Sekunden
+    const notAnswered = document.getElementById('pq-waiting')?.style.display === 'none'
+                     && window._selectedAnswer === null;
+    if (notAnswered && remaining <= 10) playTickSound(remaining);
+    remaining--;
+  }
+  tick();
+  playerTickInterval = setInterval(tick, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
+  const wrap = document.getElementById('timer-wrap');
+  const btn  = document.getElementById('btn-timer');
+  if (wrap) wrap.style.display = 'none';
+  if (btn)  btn.disabled = false;
+  // Auch DB-Feld clearen
+  if (IS_HOST && SESSION_ID) db.from('game_sessions').update({ timer_started_at: null }).eq('id', SESSION_ID).then(()=>{});
+}
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimeout); toastTimeout=setTimeout(()=>t.classList.remove('show'),4000); }
+let toastTimeout;
+function shuffle(arr) { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+// Gewichtete Fragenauswahl: Fragen die lange nicht dran waren kommen häufiger
+// Gewicht = wie lange her (in Tagen) + 1 für nie gespielte Fragen
+function weightedQuestionSelect(questions, count) {
+  const now = Date.now();
+  // Berechne Gewicht für jede Frage
+  const weighted = questions.map(q => {
+    let weight;
+    if (!q.last_used_at) {
+      weight = 9999; // Noch nie gespielt → höchste Priorität
+    } else {
+      const daysSince = (now - new Date(q.last_used_at).getTime()) / (1000 * 60 * 60 * 24);
+      weight = Math.max(0.1, daysSince); // Mindestgewicht 0.1
+    }
+    return { q, weight };
+  });
+
+  // Gewichtete Zufallsauswahl ohne Wiederholung (Reservoir Sampling mit Gewichten)
+  const selected = [];
+  const pool = [...weighted];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+    let rand = Math.random() * totalWeight;
+    let chosen = 0;
+    for (let j = 0; j < pool.length; j++) {
+      rand -= pool[j].weight;
+      if (rand <= 0) { chosen = j; break; }
+    }
+    selected.push(pool[chosen].q);
+    pool.splice(chosen, 1);
+  }
+  return selected;
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await init();
+  if (!SESSION_ID) return; // showNoSessionHint() wurde bereits aufgerufen
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('viewer')) { await viewerJoin(); return; }
+
+  const role = localStorage.getItem('qb_role'), savedName = localStorage.getItem('qb_my_name');
+  if (role === 'host') {
+    IS_HOST = true;
+    const s = await getSession();
+    if (!s) { showView('view-host-dashboard'); setHostLinks(); updateViewerToggleUI(); showLogoutBtn(); return; }
+    VIEWER_VOTING_ENABLED = s.viewer_voting || false;
+    const players = await getPlayers();
+    updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+    updateHostLiveRanking(players);
+    await updateHostJokerOverview(players);
+    document.getElementById('btn-start').disabled = players.length < 1;
+    // Immer erst View zeigen, dann Links setzen (DOM muss existieren)
+    if (s.phase === 'lobby' || !s.questions) {
+      showView('view-host-dashboard');
+    } else if (s.phase === 'final') {
+      renderPodiumAndRanking('final-podium', 'final-ranking', players);
+      showView('view-host-final');
+    } else {
+      // question / distribution / revealed
+      currentQIndex = s.question_index;
+      renderHostQuestion(s);
+      // Falls bereits in Distribution/Revealed Phase → auch Verteilung anzeigen
+      if (s.phase === 'distribution' || s.phase === 'revealed') {
+        await hostShowDistribution();
+        if (s.phase === 'revealed') {
+          // Auflösung wiederherstellen ohne Punkte nochmal zu vergeben
+          await restoreRevealedState(s);
+        }
+      }
+    }
+    setHostLinks(); updateViewerToggleUI(); showLogoutBtn();
+  } else if (role === 'viewer') {
+    await viewerJoin(); showLogoutBtn();
+  } else if (role === 'player' && savedName) {
+    MY_NAME = savedName;
+    document.getElementById('plobby-name').textContent = `Hallo, ${savedName}! 👋`;
+    const s = await getSession();
+    if (s) { if (s.phase==='lobby') { updateLobbyUI(await getPlayers(),'plobby-list'); showView('view-player-lobby'); } else await playerHandlePhase(s); }
+    showLogoutBtn();
+  }
+});
+</script>
+</body>
+</html>
