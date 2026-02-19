@@ -395,6 +395,38 @@ textarea { resize: vertical; min-height: 80px; }
 .help-alert-item .help-icon { font-size: 1.6rem; flex-shrink: 0; }
 .help-alert-item .help-text { flex: 1; }
 .help-alert-item .help-name { color: var(--gold); }
+/* ── HOST JOKER OVERVIEW ── */
+.joker-overview { margin-top: 4px; }
+.joker-overview-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 0; border-bottom: 1px solid var(--border); gap: 8px;
+  font-size: .8rem;
+}
+.joker-overview-row:last-child { border-bottom: none; }
+.joker-overview-name { font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+.joker-pips { display: flex; gap: 4px; }
+.joker-pip {
+  width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; line-height: 1;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.06);
+  transition: all .3s;
+}
+.joker-pip.available.j-audience { background: rgba(155,89,182,.2); border-color: rgba(155,89,182,.4); }
+.joker-pip.available.j-host     { background: rgba(245,200,66,.15); border-color: rgba(245,200,66,.4); }
+.joker-pip.available.j-fifty    { background: rgba(46,204,113,.15); border-color: rgba(46,204,113,.4); }
+.joker-pip.used { opacity: .22; filter: grayscale(1); }
+/* ── HOST LIVE RANKING (Panel) ── */
+.hp-rank-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; border-bottom: 1px solid var(--border); font-size: .82rem;
+}
+.hp-rank-row:last-child { border-bottom: none; }
+.hp-rank-num { width: 18px; text-align: center; color: var(--muted); font-size: .72rem; flex-shrink: 0; }
+.hp-rank-num.gold { color: var(--gold); font-weight: 900; }
+.hp-rank-name { flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-rank-score { font-family: 'Bebas Neue', sans-serif; font-size: 1.05rem; color: var(--gold); flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -521,8 +553,15 @@ textarea { resize: vertical; min-height: 80px; }
       </div>
     </div>
     <div class="panel-sep"></div>
-    <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1.5px">Live-Scores</div>
-    <div id="hp-scores"></div>
+    <!-- Joker-Übersicht -->
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1.5px">🃏 Joker-Status</div>
+    <div class="joker-overview" id="hp-joker-overview">
+      <div style="color:var(--muted);font-size:.78rem">Warte auf Spieler…</div>
+    </div>
+    <div class="panel-sep"></div>
+    <!-- Live-Rangliste -->
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1.5px">🏆 Live-Rangliste</div>
+    <div id="hp-live-ranking"></div>
   </div>
   <div style="width:100%;max-width:680px;padding-right:290px">
     <div class="progress-bar"><div class="progress-fill" id="hq-progress"></div></div>
@@ -756,7 +795,7 @@ textarea { resize: vertical; min-height: 80px; }
 
 <script>
 // ╔══════════════════════════════════════════╗
-// ║  ⚙️  CONFIG — HIER EINTRAGEN            ║
+// ║  ⚙️  CONFIG                             ║
 // ╚══════════════════════════════════════════╝
 const SUPABASE_URL       = 'https://vpldugbiwouhrkqdwwls.supabase.co';
 const SUPABASE_ANON      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwbGR1Z2Jpd291aHJrcWR3d2xzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MzQwMTQsImV4cCI6MjA4NzAxMDAxNH0.as6LI18zJcynUJ23sTj_wQpLkxIf610QWP61-WlLtAc';
@@ -885,31 +924,35 @@ async function onSessionChange(payload) {
 async function onJokerChange(payload) {
   const j = payload.new; if (!j) return;
   const role = localStorage.getItem('qb_role');
-  if (role === 'host' && j.joker_type === 'host') {
-    const container = document.getElementById('host-help-container');
-    if (!container) return;
+  if (role === 'host') {
+    // Joker-Übersicht aktualisieren
+    const players = await getPlayers();
+    await updateHostJokerOverview(players);
 
-    // Neues Alert-Element erstellen
-    const item = document.createElement('div');
-    item.className = 'help-alert-item';
-    item.dataset.player = j.player_name;
-    item.innerHTML = `
-      <span class="help-icon">🆘</span>
-      <span class="help-text"><span class="help-name">${j.player_name}</span> braucht Hilfe!</span>
-    `;
-    container.appendChild(item);
-
-    // Alert nach Ende der Runde (15s) ausblenden — aber erst wenn Verteilung gezeigt wird
-    // Wird durch renderHostQuestion() komplett geleert
-    showToast(`🆘 ${j.player_name} braucht Hilfe!`);
+    if (j.joker_type === 'host') {
+      const container = document.getElementById('host-help-container');
+      if (!container) return;
+      const item = document.createElement('div');
+      item.className = 'help-alert-item';
+      item.dataset.player = j.player_name;
+      item.innerHTML = `
+        <span class="help-icon">🆘</span>
+        <span class="help-text"><span class="help-name">${j.player_name}</span> braucht Hilfe!</span>
+      `;
+      container.appendChild(item);
+      showToast(`🆘 ${j.player_name} braucht Hilfe!`);
+    }
   }
 }
 async function onPlayersChange() {
   const p = await getPlayers();
   updateLobbyUI(p);
   updateScoreboardUI('host-scores', p);
-  updateScoreboardUI('hp-scores', p, true);
-  if (IS_HOST) document.getElementById('btn-start').disabled = p.length < 1;
+  if (IS_HOST) {
+    document.getElementById('btn-start').disabled = p.length < 1;
+    updateHostLiveRanking(p);
+    await updateHostJokerOverview(p);
+  }
 }
 async function onAnswersChange() {
   if (!IS_HOST) return;
@@ -959,6 +1002,8 @@ async function hostLogin() {
   VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
   const players = await getPlayers();
   updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+  updateHostLiveRanking(players);
+  await updateHostJokerOverview(players);
   document.getElementById('btn-start').disabled = players.length < 1;
   showView('view-host-dashboard');
   setHostLinks(); updateViewerToggleUI();
@@ -1168,8 +1213,11 @@ async function hostRevealAnswer() {
   const isLast = s.question_index >= s.questions.length-1;
   document.getElementById('btn-next').textContent = isLast ? '🏁 Ergebnis' : '▶️ Weiter';
 
-  // Refresh live score panel with score bars
-  updateScoreboardUI('hp-scores', await getPlayers(), true);
+  // Refresh live ranking + joker overview
+  const freshPlayers = await getPlayers();
+  updateHostLiveRanking(freshPlayers);
+  await updateHostJokerOverview(freshPlayers);
+  updateScoreboardUI('hp-scores', freshPlayers, true);
 }
 
 // Stellt den Revealed-State nach Host-Refresh wieder her (ohne Punkte nochmal zu vergeben)
@@ -1375,6 +1423,25 @@ function renderPlayerQuestion(s) {
   // Wenn Timer bereits läuft, sofort synchronisieren
   getSession().then(fresh => { if (fresh?.timer_started_at) syncPlayerTimer(fresh); });
 
+  // Prüfen ob bereits geantwortet (z.B. nach Reload) → sofort sperren
+  db.from('answers').select('answer_index').eq('session_id', SESSION_ID)
+    .eq('player_name', MY_NAME).eq('question_index', s.question_index).single()
+    .then(({ data: existingAns }) => {
+      if (existingAns && existingAns.answer_index !== null) {
+        // Bereits abgestimmt — alles sperren, Warte-Anzeige zeigen
+        clearInterval(delayTick);
+        overlay.classList.add('hidden');
+        document.querySelectorAll('#pq-answers .answer-btn').forEach((b,i) => {
+          b.disabled = true;
+          if (i === existingAns.answer_index) b.classList.add('selected');
+        });
+        document.getElementById('pq-confirm').style.display = 'none';
+        document.getElementById('pq-waiting').style.display = 'flex';
+        document.getElementById('pq-timer-bar').style.display = 'none';
+        if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
+      }
+    });
+
   playQuestionSound();
   showView('view-player-question');
 }
@@ -1430,8 +1497,22 @@ async function viewerJoin() {
   if (s.phase === 'lobby' || !VIEWER_VOTING_ENABLED) {
     document.getElementById('viewer-lobby-msg').textContent = VIEWER_VOTING_ENABLED ? 'Warte auf die nächste Frage…' : 'Voting noch nicht freigeschaltet — bitte warten.';
     showView('view-viewer-lobby');
-  } else if (s.phase === 'question') { currentQIndex = s.question_index; renderViewerQuestion(s); }
-  else if (s.phase === 'final') showView('view-viewer-final');
+  } else if (s.phase === 'question') {
+    // Bereits abgestimmt? → Lobby zeigen bis nächste Frage
+    const { data: voted } = await db.from('viewer_answers').select('id')
+      .eq('session_id', SESSION_ID).eq('viewer_token', VIEWER_TOKEN)
+      .eq('question_index', s.question_index).single().catch(() => ({ data: null }));
+    if (voted) {
+      document.getElementById('viewer-lobby-msg').textContent = '✅ Stimme bereits abgegeben — warte auf nächste Frage…';
+      showView('view-viewer-lobby');
+    } else {
+      currentQIndex = s.question_index; renderViewerQuestion(s);
+    }
+  } else if (s.phase === 'distribution' || s.phase === 'revealed') {
+    // Frage bereits vorbei — warten
+    document.getElementById('viewer-lobby-msg').textContent = 'Warte auf die nächste Frage…';
+    showView('view-viewer-lobby');
+  } else if (s.phase === 'final') showView('view-viewer-final');
   else showView('view-viewer-lobby');
 }
 
@@ -1515,6 +1596,48 @@ async function editorSave() {
 }
 
 // ── UI HELPERS ────────────────────────────
+async function updateHostJokerOverview(players) {
+  const el = document.getElementById('hp-joker-overview');
+  if (!el || !players.length) return;
+  // Alle verbrauchten Joker für diese Session laden
+  const { data: allJokers } = await db.from('joker_usage')
+    .select('player_name,joker_type').eq('session_id', SESSION_ID);
+  const used = {}; // { playerName: Set<jokerType> }
+  for (const j of (allJokers || [])) {
+    if (!used[j.player_name]) used[j.player_name] = new Set();
+    used[j.player_name].add(j.joker_type);
+  }
+  const JOKER_DEFS = [
+    { type: 'audience', icon: '👥', cls: 'j-audience' },
+    { type: 'host',     icon: '🆘', cls: 'j-host'     },
+    { type: 'fifty',    icon: '½',  cls: 'j-fifty'    },
+  ];
+  el.innerHTML = players.map(p => {
+    const pUsed = used[p.name] || new Set();
+    const pips  = JOKER_DEFS.map(j =>
+      `<div class="joker-pip ${j.cls} ${pUsed.has(j.type) ? 'used' : 'available'}" title="${j.type}">${j.icon}</div>`
+    ).join('');
+    return `<div class="joker-overview-row">
+      <span class="joker-overview-name" title="${p.name}">${p.name}</span>
+      <div class="joker-pips">${pips}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateHostLiveRanking(players) {
+  const el = document.getElementById('hp-live-ranking');
+  if (!el) return;
+  const sorted = [...players].sort((a,b) => (b.score||0) - (a.score||0));
+  if (!sorted.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.78rem">Noch keine Punkte…</div>'; return; }
+  const medals = ['🥇','🥈','🥉'];
+  el.innerHTML = sorted.map((p,i) => `
+    <div class="hp-rank-row">
+      <div class="hp-rank-num ${i===0?'gold':''}">${i < 3 ? medals[i] : i+1}</div>
+      <div class="hp-rank-name" title="${p.name}">${p.name}</div>
+      <div class="hp-rank-score">${p.score||0}</div>
+    </div>`).join('');
+}
+
 function updateLobbyUI(players, listId) {
   const html = players.map(p=>`<div class="player-chip"><div class="dot"></div>${p.name}</div>`).join('');
   const hostEl = document.getElementById('lobby-list');
@@ -1683,6 +1806,14 @@ async function useJoker(type) {
   if (usedJokers.has(type)) return;
   const s = await getSession();
   if (!s || s.phase !== 'question') { showToast('Joker nur während einer Frage!'); return; }
+
+  // Prüfen ob bereits ein Joker in DIESER Runde (question_index) benutzt wurde
+  const { data: thisRound } = await db.from('joker_usage')
+    .select('id').eq('session_id', SESSION_ID).eq('player_name', MY_NAME)
+    .eq('question_index', s.question_index);
+  if (thisRound && thisRound.length > 0) {
+    showToast('⚠️ Pro Frage nur ein Joker erlaubt!'); return;
+  }
 
   if (type === 'fifty') {
     // 50:50: zwei falsche Antworten ausblenden
@@ -1874,6 +2005,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     VIEWER_VOTING_ENABLED = s.viewer_voting || false;
     const players = await getPlayers();
     updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+    updateHostLiveRanking(players);
+    await updateHostJokerOverview(players);
     document.getElementById('btn-start').disabled = players.length < 1;
     // Immer erst View zeigen, dann Links setzen (DOM muss existieren)
     if (s.phase === 'lobby' || !s.questions) {
