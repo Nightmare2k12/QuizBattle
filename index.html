@@ -455,6 +455,28 @@ textarea { resize: vertical; min-height: 80px; }
 .joker-pip.available.j-host     { background: rgba(245,200,66,.15); border-color: rgba(245,200,66,.4); }
 .joker-pip.available.j-fifty    { background: rgba(46,204,113,.15); border-color: rgba(46,204,113,.4); }
 .joker-pip.used { opacity: .22; filter: grayscale(1); }
+/* ── CONTEXT MENU ── */
+.ctx-menu {
+  position: fixed; z-index: 800;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 0;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  min-width: 160px;
+}
+.ctx-item {
+  padding: 9px 16px; cursor: pointer; font-size: .85rem; font-weight: 700;
+  transition: background .15s; display: flex; align-items: center; gap: 8px;
+}
+.ctx-item:hover { background: rgba(255,255,255,.06); }
+.ctx-item.danger { color: var(--accent); }
+/* ── LOBBY LIST MODAL ── */
+.lobby-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: 10px; margin-bottom: 8px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  gap: 10px;
+}
+.lobby-row.active-session { border-color: rgba(233,69,96,.4); background: rgba(233,69,96,.06); }
 /* ── HOST LIVE RANKING (Panel) ── */
 .hp-rank-row {
   display: flex; align-items: center; gap: 8px;
@@ -522,6 +544,7 @@ textarea { resize: vertical; min-height: 80px; }
         <div class="tagline">Host Dashboard</div>
       </div>
       <div class="row">
+        <button class="btn btn-secondary" onclick="openLobbyList()">🗂️ Meine Lobbys</button>
         <button class="btn btn-secondary" onclick="openEditor()">✏️ Fragen</button>
         <button class="btn btn-primary" id="btn-start" onclick="startGame()" disabled>🚀 Spiel starten</button>
       </div>
@@ -587,6 +610,14 @@ textarea { resize: vertical; min-height: 80px; }
             <label class="setting-check"><input type="checkbox" id="cfg-j-host" checked> 🆘 Host-Hilfe</label>
             <label class="setting-check"><input type="checkbox" id="cfg-j-fifty" checked> 50:50</label>
             <label class="setting-check"><input type="checkbox" id="cfg-j-highrisk" checked> 🎲 High Risk</label>
+          </div>
+        </div>
+        <!-- Lobby-Passwort -->
+        <div style="margin-top:14px">
+          <div class="lbl" style="margin-bottom:6px">🔒 Lobby-Passwort (optional)</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="cfg-lobby-pw" placeholder="Kein Passwort = offen" maxlength="30" style="flex:1;min-width:160px">
+            <div style="font-size:.78rem;color:var(--muted);flex-basis:100%">Zuschauer können immer ohne Passwort beitreten.</div>
           </div>
         </div>
         <button class="btn btn-primary btn-full" style="margin-top:16px" onclick="saveSettings()">💾 Speichern</button>
@@ -912,6 +943,37 @@ textarea { resize: vertical; min-height: 80px; }
   </div>
 </div>
 
+<!-- CONTEXT MENU (Spieler kicken) -->
+<div id="ctx-menu" class="ctx-menu" style="display:none">
+  <div class="ctx-item danger" onclick="kickPlayerFromMenu()">🚫 Spieler kicken</div>
+</div>
+
+<!-- MODAL: Meine Lobbys -->
+<div id="modal-lobbies" class="modal-overlay">
+  <div class="modal" style="max-width:580px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2>📋 Meine Lobbys</h2>
+      <button class="btn btn-secondary" style="padding:8px 14px" onclick="document.getElementById('modal-lobbies').classList.remove('open')">✕ Schließen</button>
+    </div>
+    <div id="lobbies-list"><div style="color:var(--muted);font-size:.88rem">Wird geladen…</div></div>
+  </div>
+</div>
+
+<!-- MODAL: Passwort-Eingabe für Spieler -->
+<div id="modal-pw-join" class="modal-overlay">
+  <div class="modal" style="max-width:420px;text-align:center">
+    <div style="font-size:2rem;margin-bottom:8px">🔒</div>
+    <h2 style="margin-bottom:8px">Lobby geschützt</h2>
+    <div style="color:var(--muted);font-size:.85rem;margin-bottom:20px">Diese Lobby ist mit einem Passwort geschützt.</div>
+    <div class="lbl" style="text-align:left">Passwort</div>
+    <input type="password" id="lobby-pw-input" placeholder="Passwort eingeben…" onkeydown="if(event.key==='Enter')submitLobbyPw()" />
+    <div class="gap" style="margin-top:16px">
+      <button class="btn btn-primary btn-full" onclick="submitLobbyPw()">🔓 Beitreten</button>
+      <button class="btn btn-secondary btn-full" onclick="document.getElementById('modal-pw-join').classList.remove('open');showView('view-landing')">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ╔══════════════════════════════════════════╗
 // ║  ⚙️  CONFIG                             ║
@@ -939,7 +1001,8 @@ let LOBBY_SETTINGS = {
   speedTime: 20,
   hardcore: false,
   lives: 1,
-  jokers: { audience: true, host: true, fifty: true, highrisk: true }
+  jokers: { audience: true, host: true, fifty: true, highrisk: true },
+  lobbyPassword: ''
 };
 
 // Settings sicher aus Session lesen (Supabase gibt JSONB manchmal als String zurück)
@@ -1194,6 +1257,7 @@ async function saveSettings() {
     fifty:    document.getElementById('cfg-j-fifty').checked,
     highrisk: document.getElementById('cfg-j-highrisk').checked,
   };
+  LOBBY_SETTINGS.lobbyPassword = (document.getElementById('cfg-lobby-pw').value || '').trim();
   await db.from('game_sessions').update({ settings: settingsPayload() }).eq('id', SESSION_ID);
   updateSettingsSummary();
   document.getElementById('settings-panel').style.display = 'none';
@@ -1224,6 +1288,9 @@ function applySettingsToUI() {
     const el = document.getElementById(`cfg-j-${j}`);
     if (el) el.checked = LOBBY_SETTINGS.jokers?.[j] !== false;
   });
+  // Lobby-Passwort
+  const pwEl = document.getElementById('cfg-lobby-pw');
+  if (pwEl) pwEl.value = LOBBY_SETTINGS.lobbyPassword || '';
   updateSettingsSummary();
 }
 
@@ -1632,6 +1699,32 @@ async function playerJoin() {
   const s = await getSession();
   if (!s)               { showToast('❌ Keine aktive Session!'); return; }
   if (s.phase !== 'lobby') { showToast('❌ Spiel läuft bereits!'); return; }
+  // Passwort prüfen
+  const settings = parseSettings(s.settings) || {};
+  const reqPw = settings.lobbyPassword || '';
+  if (reqPw) {
+    window._pendingJoinName = name;
+    document.getElementById('lobby-pw-input').value = '';
+    document.getElementById('modal-pw-join').classList.add('open');
+    return;
+  }
+  await doPlayerJoin(name);
+}
+
+async function submitLobbyPw() {
+  const entered = document.getElementById('lobby-pw-input').value;
+  const s = await getSession();
+  const settings = parseSettings(s?.settings) || {};
+  const reqPw = settings.lobbyPassword || '';
+  if (entered !== reqPw) { showToast('❌ Falsches Passwort!'); return; }
+  document.getElementById('modal-pw-join').classList.remove('open');
+  await doPlayerJoin(window._pendingJoinName || '');
+}
+
+async function doPlayerJoin(name) {
+  if (!name) return;
+  const s = await getSession();
+  if (!s) { showToast('❌ Keine aktive Session!'); return; }
   const { error } = await db.from('players').upsert({ session_id: SESSION_ID, name, score: 0 }, { onConflict: 'session_id,name' });
   if (error) { showToast('❌ ' + error.message); return; }
   MY_NAME = name; localStorage.setItem('qb_my_name', name); localStorage.setItem('qb_role', 'player');
@@ -1947,9 +2040,13 @@ async function updateHostJokerOverview(players) {
   ];
   el.innerHTML = players.map(p => {
     const pUsed = used[p.name] || new Set();
-    const pips  = JOKER_DEFS.map(j =>
-      `<div class="joker-pip ${j.cls} ${pUsed.has(j.type) ? 'used' : 'available'}" title="${j.type}">${j.icon}</div>`
-    ).join('');
+    const pips  = JOKER_DEFS.map(j => {
+      const isGloballyDisabled = LOBBY_SETTINGS.jokers?.[j.type] === false;
+      const isSpent = pUsed.has(j.type);
+      const pipCls = isGloballyDisabled ? 'used' : (isSpent ? 'used' : 'available');
+      const titleTxt = isGloballyDisabled ? 'Deaktiviert' : (isSpent ? 'Verwendet' : 'Verfügbar');
+      return `<div class="joker-pip ${j.cls} ${pipCls}" title="${titleTxt}">${isGloballyDisabled ? '✕' : j.icon}</div>`;
+    }).join('');
     return `<div class="joker-overview-row">
       <span class="joker-overview-name" title="${p.name}">${p.name}</span>
       <div class="joker-pips">${pips}</div>
@@ -1972,7 +2069,13 @@ function updateHostLiveRanking(players) {
 }
 
 function updateLobbyUI(players, listId) {
-  const html = players.map(p=>`<div class="player-chip"><div class="dot"></div>${p.name}</div>`).join('');
+  const makeChip = (p) => {
+    const chip = IS_HOST
+      ? `<div class="player-chip" data-name="${p.name}" oncontextmenu="openCtxMenu(event,'${p.name.replace(/'/g,"\\'")}');return false;" title="Rechtsklick zum Kicken"><div class="dot"></div>${p.name}</div>`
+      : `<div class="player-chip"><div class="dot"></div>${p.name}</div>`;
+    return chip;
+  };
+  const html = players.map(makeChip).join('');
   const hostEl = document.getElementById('lobby-list');
   if (hostEl) {
     hostEl.innerHTML = html;
@@ -1981,7 +2084,7 @@ function updateLobbyUI(players, listId) {
     if (badgeEl) badgeEl.textContent = `${players.length} Spieler`;
   }
   const pEl = document.getElementById(listId || 'plobby-list');
-  if (pEl) pEl.innerHTML = html;
+  if (pEl) pEl.innerHTML = players.map(p=>`<div class="player-chip"><div class="dot"></div>${p.name}</div>`).join('');
 }
 function updateScoreboardUI(elId, players, compact) {
   const el = document.getElementById(elId); if (!el) return;
@@ -2128,12 +2231,18 @@ function renderJokerBar() {
   allTypes.forEach(type => {
     const btn = document.getElementById(`joker-${type}`);
     if (!btn) return;
-    const disabled  = LOBBY_SETTINGS.jokers?.[type] === false;
-    const spent     = usedJokers.has(type);
-    btn.style.display = disabled ? 'none' : 'flex';
-    btn.disabled      = spent;
-    btn.classList.toggle('used', spent);
-    btn.title = spent ? 'Bereits verwendet' : (type === 'highrisk' ? '🎲 High Risk: ±3 Punkte (letzte Frage: ±5)' : '');
+    const isDisabled = LOBBY_SETTINGS.jokers?.[type] === false;
+    const spent      = usedJokers.has(type);
+    btn.style.display = 'flex';
+    btn.disabled      = isDisabled || spent;
+    btn.classList.toggle('used', spent || isDisabled);
+    if (isDisabled) {
+      btn.title = '⛔ Dieser Joker ist deaktiviert';
+    } else if (spent) {
+      btn.title = 'Bereits verwendet';
+    } else {
+      btn.title = type === 'highrisk' ? '🎲 High Risk: ±3 Punkte (letzte Frage: ±5)' : '';
+    }
   });
 }
 
@@ -2201,6 +2310,115 @@ async function useJoker(type) {
   usedJokers.add(type);
   renderJokerBar();
 }
+
+// ── LOBBY-ÜBERSICHT (Host) ────────────────
+async function openLobbyList() {
+  document.getElementById('modal-lobbies').classList.add('open');
+  const el = document.getElementById('lobbies-list');
+  el.innerHTML = '<div style="color:var(--muted);font-size:.88rem">Wird geladen…</div>';
+  const { data: sessions } = await db.from('game_sessions')
+    .select('id,phase,created_at,settings')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (!sessions || !sessions.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.88rem">Keine Lobbys gefunden.</div>'; return;
+  }
+  el.innerHTML = sessions.map(s => {
+    const isCurrent = s.id === SESSION_ID;
+    const date = new Date(s.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const phaseMap = { lobby:'🟡 Lobby', question:'🟢 Läuft', distribution:'🟢 Läuft', revealed:'🟢 Läuft', final:'⚫ Beendet' };
+    const phaseLabel = phaseMap[s.phase] || s.phase;
+    return `<div class="lobby-row ${isCurrent ? 'active-session' : ''}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:2px">${date} ${isCurrent ? '<span style="color:var(--accent);font-weight:900">← Aktiv</span>' : ''}</div>
+        <div style="font-weight:700;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.id.substring(0,16)}…</div>
+        <div style="font-size:.78rem;margin-top:2px">${phaseLabel}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${!isCurrent ? `<button class="btn btn-secondary" style="padding:7px 12px;font-size:.78rem" onclick="rejoinLobby('${s.id}')">↩ Joinen</button>` : ''}
+        <button class="btn btn-secondary" style="padding:7px 12px;font-size:.78rem;color:var(--accent)" onclick="closeLobbyFromList('${s.id}')">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function rejoinLobby(sessionId) {
+  document.getElementById('modal-lobbies').classList.remove('open');
+  if (realtimeSub) { db.removeChannel(realtimeSub); realtimeSub = null; }
+  SESSION_ID = sessionId;
+  localStorage.setItem('qb_session_id', sessionId);
+  currentQIndex = -1;
+  subscribeRealtime();
+  const s = await getSession();
+  if (!s) { showToast('❌ Session nicht gefunden!'); return; }
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+  VIEWER_VOTING_ENABLED = s.viewer_voting || false;
+  const players = await getPlayers();
+  updateLobbyUI(players); updateScoreboardUI('host-scores', players);
+  updateHostLiveRanking(players);
+  await updateHostJokerOverview(players);
+  document.getElementById('btn-start').disabled = players.length < 1;
+  applySettingsToUI();
+  if (s.phase === 'lobby' || !s.questions) {
+    showView('view-host-dashboard');
+  } else if (s.phase === 'final') {
+    renderPodiumAndRanking('final-podium', 'final-ranking', players);
+    showView('view-host-final');
+  } else {
+    currentQIndex = s.question_index;
+    renderHostQuestion(s);
+    if (s.phase === 'distribution' || s.phase === 'revealed') {
+      await hostShowDistribution();
+      if (s.phase === 'revealed') await restoreRevealedState(s);
+    }
+  }
+  setHostLinks(); updateViewerToggleUI();
+  showToast(`↩ Zu Lobby gewechselt!`);
+}
+
+async function closeLobbyFromList(sessionId) {
+  if (!confirm('Diese Lobby wirklich löschen?')) return;
+  await db.from('answers').delete().eq('session_id', sessionId);
+  await db.from('viewer_answers').delete().eq('session_id', sessionId);
+  await db.from('joker_usage').delete().eq('session_id', sessionId);
+  await db.from('players').delete().eq('session_id', sessionId);
+  await db.from('game_sessions').delete().eq('id', sessionId);
+  showToast('🗑️ Lobby gelöscht');
+  if (sessionId === SESSION_ID) {
+    // Aktive Session gelöscht → neue erstellen
+    document.getElementById('modal-lobbies').classList.remove('open');
+    await hostNewSession();
+  } else {
+    openLobbyList();
+  }
+}
+
+// ── SPIELER KICKEN (Rechtsklick-Menü) ────
+let _ctxTargetPlayer = null;
+
+function openCtxMenu(e, playerName) {
+  e.preventDefault();
+  _ctxTargetPlayer = playerName;
+  const menu = document.getElementById('ctx-menu');
+  menu.style.display = 'block';
+  const mx = Math.min(e.clientX, window.innerWidth  - 180);
+  const my = Math.min(e.clientY, window.innerHeight - 60);
+  menu.style.left = mx + 'px';
+  menu.style.top  = my + 'px';
+}
+
+async function kickPlayerFromMenu() {
+  document.getElementById('ctx-menu').style.display = 'none';
+  if (!_ctxTargetPlayer) return;
+  if (!confirm(`${_ctxTargetPlayer} wirklich aus der Lobby kicken?`)) return;
+  await db.from('players').delete().eq('session_id', SESSION_ID).eq('name', _ctxTargetPlayer);
+  showToast(`🚫 ${_ctxTargetPlayer} wurde gekickt`);
+  _ctxTargetPlayer = null;
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('ctx-menu').style.display = 'none';
+});
 
 // ── TIMER ─────────────────────────────────
 let timerInterval = null, playerTickInterval = null;
