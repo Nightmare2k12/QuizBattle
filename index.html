@@ -1156,6 +1156,25 @@ async function onPlayersChange() {
     document.getElementById('btn-start').disabled = p.length < 1;
     updateHostLiveRanking(p);
     await updateHostJokerOverview(p);
+  } else if (!IS_VIEWER && MY_NAME) {
+    // Prüfen ob dieser Spieler noch in der Liste ist → wurde er gekickt?
+    const stillHere = p.some(pl => pl.name === MY_NAME);
+    if (!stillHere) {
+      // Spieler wurde gekickt
+      IS_HOST = false; MY_NAME = null;
+      localStorage.removeItem('qb_role');
+      localStorage.removeItem('qb_my_name');
+      document.getElementById('logout-btn').style.display = 'none';
+      // Kicked-Meldung über eine einfache Overlay-Seite
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="kicked-overlay" style="position:fixed;inset:0;z-index:900;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center">
+          <div style="font-size:3rem">🚫</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:2.5rem;color:var(--accent);letter-spacing:2px">Gekickt!</div>
+          <div style="color:var(--muted);font-size:.95rem">Du wurdest vom Host aus der Lobby entfernt.</div>
+          <button class="btn btn-secondary" onclick="document.getElementById('kicked-overlay').remove();showView('view-landing')">🏠 Hauptmenü</button>
+        </div>`);
+    }
   }
 }
 async function onAnswersChange() {
@@ -1736,6 +1755,14 @@ async function doPlayerJoin(name) {
 
 async function playerHandlePhase(s) {
   if (!MY_NAME) return;
+  // Neue Runde gestartet → Joker-Cache zurücksetzen
+  if (s.phase === 'lobby') {
+    usedJokers = new Set();
+    renderJokerBar();
+    updateLobbyUI(await getPlayers(), 'plobby-list');
+    showView('view-player-lobby');
+    return;
+  }
   if (s.phase === 'question' && currentQIndex !== s.question_index) { currentQIndex = s.question_index; renderPlayerQuestion(s); }
   else if (s.phase === 'distribution' || s.phase === 'revealed') {
     if (s.phase === 'revealed') await playerShowResult(s);
@@ -1839,6 +1866,10 @@ function renderPlayerQuestion(s) {
         if (playerTickInterval) { clearInterval(playerTickInterval); playerTickInterval = null; }
       }
     });
+
+  // Joker initialisieren: Settings aus Session laden + bereits verwendete Joker
+  { const _ps = parseSettings(s.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
+  initJokers(); // lädt usedJokers aus DB und ruft renderJokerBar() auf
 
   playQuestionSound();
   showView('view-player-question');
