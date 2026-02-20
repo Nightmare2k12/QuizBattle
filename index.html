@@ -980,7 +980,8 @@ textarea { resize: vertical; min-height: 80px; }
 // ╚══════════════════════════════════════════╝
 const SUPABASE_URL       = 'https://vpldugbiwouhrkqdwwls.supabase.co';
 const SUPABASE_ANON      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwbGR1Z2Jpd291aHJrcWR3d2xzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MzQwMTQsImV4cCI6MjA4NzAxMDAxNH0.as6LI18zJcynUJ23sTj_wQpLkxIf610QWP61-WlLtAc';
-const HOST_PASSWORD      = 'Kiwi89';
+// Verschleierte Admin-E-Mail (Base64 von 'admin@quiz.battle')
+const _AE = atob('YWRtaW5AcXVpei5iYXR0bGU=');
 const QUESTIONS_PER_GAME = 20;
 const POINTS_CORRECT     = 1;
 // ════════════════════════════════════════════
@@ -1219,7 +1220,24 @@ function goHost() { showView('view-host-login'); }
 
 async function hostLogin() {
   const pw = document.getElementById('host-pw').value.trim();
-  if (pw !== HOST_PASSWORD) { showToast('❌ Falsches Passwort'); return; }
+  if (!pw) { showToast('Bitte Passwort eingeben!'); return; }
+
+  const loginBtn = document.querySelector('#view-host-login .btn-primary');
+  if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = '⏳ Anmelden…'; }
+
+  // Supabase Auth Login mit verschleierter Fake-E-Mail
+  const { data: authData, error: authErr } = await db.auth.signInWithPassword({
+    email: _AE,
+    password: pw
+  });
+
+  if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Einloggen'; }
+
+  if (authErr || !authData?.user) {
+    showToast('❌ Falsches Passwort');
+    return;
+  }
+
   IS_HOST = true; localStorage.setItem('qb_role', 'host');
   const s = await getSession();
   VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
