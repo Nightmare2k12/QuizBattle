@@ -1061,27 +1061,22 @@ async function init() {
     }
   }
 
-  // 3. Nur wenn KEINE Session gefunden → neue erstellen (nur für Host sinnvoll)
-  //    Spieler/Zuschauer ohne session=-Parameter zeigen eine Fehlermeldung
+  // 3. Keine Session gefunden
+  //    Spieler/Zuschauer ohne Link → Hinweis zeigen
+  //    Host → SESSION_ID bleibt null, hostLogin() erstellt die Session nach Auth
   if (!SESSION_ID) {
     if (urlViewer || localStorage.getItem('qb_role') === 'player') {
-      // Spieler/Zuschauer ohne Link → Hinweis zeigen
       showNoSessionHint();
       return;
     }
-    // Host erstellt neue Session
-    const { data, error } = await db.from('game_sessions')
-      .insert({ phase: 'lobby', viewer_voting: false }).select().single();
-    if (error) { showToast('❌ Supabase-Fehler: ' + error.message); return; }
-    SESSION_ID = data.id;
-    localStorage.setItem('qb_session_id', SESSION_ID);
+    // Host: kein Fehler, einfach null lassen — hostLogin() übernimmt
   }
 
   VIEWER_TOKEN = localStorage.getItem('qb_viewer_token') || crypto.randomUUID();
   localStorage.setItem('qb_viewer_token', VIEWER_TOKEN);
 
   const sidEl = document.getElementById('landing-session-id');
-  if (sidEl) sidEl.textContent = SESSION_ID.substring(0,8) + '…';
+  if (sidEl) sidEl.textContent = SESSION_ID ? SESSION_ID.substring(0,8) + '…' : '–';
 
   // Auto-redirect wenn ?viewer=1 in der URL
   if (urlViewer) {
@@ -1089,7 +1084,7 @@ async function init() {
     localStorage.setItem('qb_role', 'viewer');
   }
 
-  subscribeRealtime();
+  if (SESSION_ID) subscribeRealtime();
 }
 
 function showNoSessionHint() {
@@ -1239,6 +1234,18 @@ async function hostLogin() {
   }
 
   IS_HOST = true; localStorage.setItem('qb_role', 'host');
+
+  // Session erstellen oder vorhandene laden – JETZT nach erfolgreichem Auth-Login
+  if (!SESSION_ID) {
+    const { data: newSess, error: sessErr } = await db.from('game_sessions')
+      .insert({ phase: 'lobby', viewer_voting: false, settings: settingsPayload() })
+      .select().single();
+    if (sessErr) { showToast('❌ Session-Fehler: ' + sessErr.message); IS_HOST = false; return; }
+    SESSION_ID = newSess.id;
+    localStorage.setItem('qb_session_id', SESSION_ID);
+    subscribeRealtime();
+  }
+
   const s = await getSession();
   VIEWER_VOTING_ENABLED = s?.viewer_voting || false;
   { const _ps = parseSettings(s?.settings); if (_ps) Object.assign(LOBBY_SETTINGS, _ps); }
@@ -2601,14 +2608,32 @@ function weightedQuestionSelect(questions, count) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   await init();
-  if (!SESSION_ID) return; // showNoSessionHint() wurde bereits aufgerufen
 
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('viewer')) { await viewerJoin(); return; }
 
   const role = localStorage.getItem('qb_role'), savedName = localStorage.getItem('qb_my_name');
+
+  // Kein SESSION_ID: Spieler/Zuschauer ohne Link wurden bereits in init() abgefangen.
+  // Host ohne Session → zum Login, Session wird nach Auth-Login erstellt.
+  if (!SESSION_ID && role !== 'host' && !urlParams.get('viewer')) {
+    // Normalfall Landing Page zeigen
+  }
+
   if (role === 'host') {
+    // Prüfen ob noch Auth-Session aktiv (Reconnect nach Reload)
+    const { data: { session: authSession } } = await db.auth.getSession();
+    if (!authSession) {
+      // Kein Auth-Token → zurück zum Login
+      showView('view-host-login');
+      return;
+    }
     IS_HOST = true;
+    if (!SESSION_ID) {
+      // Eingeloggt aber noch keine Spiel-Session → Dashboard zeigen, hostLogin hat noch nicht erstellt
+      showView('view-host-login');
+      return;
+    }
     const s = await getSession();
     if (!s) { showView('view-host-dashboard'); setHostLinks(); updateViewerToggleUI(); showLogoutBtn(); return; }
     VIEWER_VOTING_ENABLED = s.viewer_voting || false;
