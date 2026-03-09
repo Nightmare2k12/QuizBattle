@@ -1363,7 +1363,7 @@ async function startGame() {
 }
 
 async function hostHandlePhase(s) {
-  if (s.phase === 'question' && currentQIndex !== s.question_index) {
+  if (s.phase === 'question' && (currentQIndex !== s.question_index || document.getElementById('view-player-question')?.classList.contains('active') === false)) {
     currentQIndex = s.question_index; renderHostQuestion(s);
   } else if (s.phase === 'final') {
     const p = await getPlayers();
@@ -1393,12 +1393,21 @@ function renderHostQuestion(s) {
   if (vBtn) { vBtn.style.display = VIEWER_VOTING_ENABLED ? 'flex' : 'none'; vBtn.disabled = false; }
 
   // Antworten als 2x2 Grid animiert einblenden (wie Spieler-Ansicht)
+if (window._answerTimeouts) window._answerTimeouts.forEach(t => clearTimeout(t));
+window._answerTimeouts = [];
   const grid = document.getElementById('hq-answers-grid');
   grid.innerHTML = LETTERS.map((l,i) =>
     `<div class="hq-answer-reveal" id="hq-ans-${i}">
       <div class="ha-letter">${l}</div>
       <div class="ha-text">${q.answers[i]}</div>
     </div>`).join('');
+[0,1,2,3].forEach(i => {
+    const t = setTimeout(() => {
+      const el = document.getElementById(`hq-ans-${i}`);
+      if (el) el.classList.add('visible');
+    }, 3000 + i * 2000);
+    window._answerTimeouts.push(t);
+});
 
   // Alle unsichtbar, dann nacheinander per Pop-In einblenden
   [0,1,2,3].forEach(i => {
@@ -1540,7 +1549,7 @@ async function hostRevealAnswer() {
   document.getElementById('btn-next').textContent = isLastQ ? '🏁 Ergebnis' : '▶️ Weiter';
 
   // Reveal-Animation
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => { const t = setTimeout(r, 300); window._answerTimeouts.push(t); });
   LETTERS.forEach((_,i) => {
     const bar  = document.getElementById(`pbar-${i}`);
     const wrap = document.getElementById(`dbar-wrap-${i}`);
@@ -1551,7 +1560,7 @@ async function hostRevealAnswer() {
       if (card) { card.style.opacity = '0.3'; card.style.filter = 'grayscale(1)'; }
     }
   });
-  setTimeout(() => {
+const _rt = setTimeout(() => {
     const bar  = document.getElementById(`pbar-${q.correct}`);
     const card = document.getElementById(`hq-ans-${q.correct}`);
     if (bar) bar.classList.add('correct-bar');
@@ -1562,6 +1571,7 @@ async function hostRevealAnswer() {
       setTimeout(() => { card.style.transform = 'scale(1)'; }, 400);
     }
   }, 600);
+  window._answerTimeouts.push(_rt);
 
   // Spieler-Antworten gruppieren
   document.getElementById('hq-player-ans').style.display = 'block';
@@ -2506,6 +2516,7 @@ function runHostTimerUI(seconds) {
     if (remaining <= 10) { fgEl.classList.add('urgent'); numEl.classList.add('urgent'); playTickSound(remaining); }
     if (remaining <= 0) {
       clearInterval(timerInterval); timerInterval = null;
+      document.getElementById('btn-timer').disabled = true;
       playTimerEndSound();
       wrap.style.display = 'none';
       numEl.classList.remove('urgent'); fgEl.classList.remove('urgent');
@@ -2566,8 +2577,7 @@ function stopTimer() {
   const btn  = document.getElementById('btn-timer');
   if (wrap) wrap.style.display = 'none';
   if (btn)  btn.disabled = false;
-  // Auch DB-Feld clearen
-  if (IS_HOST && SESSION_ID) db.from('game_sessions').update({ timer_started_at: null }).eq('id', SESSION_ID).then(()=>{});
+
 }
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimeout); toastTimeout=setTimeout(()=>t.classList.remove('show'),4000); }
 let toastTimeout;
